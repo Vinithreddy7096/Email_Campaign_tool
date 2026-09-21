@@ -1,0 +1,130 @@
+# Local development only (BUILD.md §5.1).
+#
+# There is deliberately NO Postfix service here. Local dev delivers to MailHog;
+# Postfix is exercised in staging. Every message "sent" locally lands in the
+# MailHog UI on http://localhost:8025 and reaches nothing on the public internet.
+
+x-app: &app
+  build: .
+  env_file: [.env]
+  environment:
+    DJANGO_SETTINGS_MODULE: config.settings.local
+    DATABASE_URL: postgres://mailer:mailer@postgres:5432/mailer
+    RABBITMQ_URL: amqp://mailer:mailer@rabbitmq:5672//
+    REDIS_URL: redis://redis:6379/0
+    S3_ENDPOINT_URL: http://minio:9000
+    MTA_SMTP_HOST: mailhog
+    MTA_SMTP_PORT: "1025"
+  volumes:
+    - .:/srv
+  depends_on:
+    postgres: {condition: service_healthy}
+    rabbitmq: {condition: service_healthy}
+    redis: {condition: service_healthy}
+    mailhog: {condition: service_started}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: mailer
+      POSTGRES_PASSWORD: mailer
+      POSTGRES_DB: mailer
+    ports: ["5432:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mailer -d mailer"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    environment:
+      RABBITMQ_DEFAULT_USER: mailer
+      RABBITMQ_DEFAULT_PASS: mailer
+    ports: ["5672:5672", "15672:15672"]
+    volumes: ["rabbitdata:/var/lib/rabbitmq"]
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports: ["6379:6379"]
+    volumes: ["redisdata:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: minio/minio
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports: ["9000:9000", "9001:9001"]
+    volumes: ["miniodata:/data"]
+
+  # THE SMTP SINK. Nothing leaves the machine.
+  mailhog:
+    image: mailhog/mailhog
+    ports: ["1025:1025", "8025:8025"]
+
+  web:
+    <<: *app
+    ports: ["8000:8000"]
+
+  worker-expand:
+    <<: *app
+    command: ["celery", "-A", "config", "worker", "-Q", "expand", "-c", "2", "-n", "expand@%h"]
+
+  worker-render:
+    <<: *app
+    command: ["celery", "-A", "config", "worker", "-Q", "render", "-c", "8", "-n", "render@%h"]
+
+  # Prefetch is pinned to 1 globally in config/celery.py — critical for this queue.
+  worker-deliver:
+    <<: *app
+    command: ["celery", "-A", "config", "worker", "-Q", "deliver", "-c", "16", "-n", "deliver@%h"]
+
+  worker-events:
+    <<: *app
+    command: ["celery", "-A", "config", "worker", "-Q", "events", "-c", "4", "-n", "events@%h"]
+
+  # §9.2 defines a `maintenance` queue at concurrency 2; §5.1's service table
+  # omits the worker. It is also task_default_queue, so anything without explicit
+  # routing lands here — with no consumer those tasks would queue forever.
+  worker-maintenance:
+    <<: *app
+    command:
+      ["celery", "-A", "config", "worker", "-Q", "maintenance", "-c", "2", "-n", "maintenance@%h"]
+
+  beat:
+    <<: *app
+    command: ["celery", "-A", "config", "beat", "--loglevel", "INFO"]
+
+  # Optional locally: `docker compose --profile observability up -d`
+  prometheus:
+    image: prom/prometheus
+    profiles: ["observability"]
+    ports: ["9090:9090"]
+    volumes: ["./monitoring/prometheus:/etc/prometheus"]
+
+  grafana:
+    image: grafana/grafana
+    profiles: ["observability"]
+    ports: ["3000:3000"]
+    volumes: ["grafanadata:/var/lib/grafana"]
+
+volumes:
+  pgdata:
+  rabbitdata:
+  redisdata:
+  miniodata:
+  grafanadata:

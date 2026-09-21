@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+
+{% block title %}Email Platform — status{% endblock %}
+
+{% block content %}
+<div class="wrap">
+  <h1>Email Platform</h1>
+  <p class="lede">
+    Self-hosted permission-based outbound email. Deliverability is an operational
+    outcome, not a software feature.
+  </p>
+
+  <section>
+    <h2>Send posture</h2>
+    <dl>
+      <dt>Environment</dt><dd><code>{{ ENVIRONMENT }}</code></dd>
+      <dt>Mock mode</dt>
+      <dd>
+        {% if MOCK_MODE %}<span class="on">ON</span> — all SMTP goes to the local sink
+        ({{ mta_target }}). Nothing reaches the internet.
+        {% else %}<span class="off">OFF</span> — messages go to a real MTA.{% endif %}
+      </dd>
+      <dt>Global send switch</dt>
+      <dd>
+        {% if GLOBAL_SEND_ENABLED %}<span class="off">ENABLED</span>
+        {% else %}<span class="on">DISABLED</span> — no worker may hand off to an MTA.{% endif %}
+      </dd>
+      {% if allowed_test_domains %}
+      <dt>Test recipient allowlist</dt>
+      <dd>{% for d in allowed_test_domains %}<code>{{ d }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}</dd>
+      {% endif %}
+    </dl>
+  </section>
+
+  <section>
+    <h2>What this instance can do</h2>
+    <p class="warn">
+      <strong>It cannot send anything.</strong> This is the repository foundation
+      only — the data model, delivery pipeline, event pipeline, and MTA layer are
+      not built yet. No campaign, template, contact, or suppression model exists.
+    </p>
+    <p>
+      Configured queues: {% for q in queues %}<code>{{ q }}</code>{% if not forloop.last %} {% endif %}{% endfor %}
+    </p>
+  </section>
+
+  <section>
+    <h2>Links</h2>
+    <ul>
+      <li><a href="/admin/">Django admin</a></li>
+      <li><a href="http://localhost:8025" target="_blank" rel="noreferrer">MailHog sink</a> — every "sent" message lands here</li>
+      <li><a href="/health/live">/health/live</a> · <a href="/health/ready">/health/ready</a></li>
+    </ul>
+  </section>
+</div>
+
+<style>
+  .wrap { max-width: 46rem; margin: 2rem auto; padding: 0 1.25rem;
+          font: 16px/1.6 system-ui, sans-serif; color: #111; }
+  h1 { margin: 0 0 .25rem; font-size: 1.6rem; }
+  h2 { margin: 2rem 0 .5rem; font-size: 1rem; text-transform: uppercase;
+       letter-spacing: .06em; color: #555; }
+  .lede { margin: 0; color: #555; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: .4rem 1rem; margin: 0; }
+  dt { font-weight: 600; color: #555; }
+  dd { margin: 0; }
+  code { background: #f1f1f1; padding: .1rem .35rem; border-radius: 3px; font-size: .9em; }
+  .on { color: #166534; font-weight: 700; }
+  .off { color: #991b1b; font-weight: 700; }
+  .warn { background: #fef3c7; border-left: 3px solid #b45309; padding: .75rem 1rem; }
+  ul { padding-left: 1.1rem; }
+  a { color: #1d4ed8; }
+  @media (prefers-color-scheme: dark) {
+    .wrap { color: #e5e5e5; }
+    h2, dt, .lede { color: #a3a3a3; }
+    code { background: #262626; }
+    .on { color: #4ade80; } .off { color: #f87171; }
+    .warn { background: #422006; border-left-color: #f59e0b; color: #fde68a; }
+    a { color: #93c5fd; }
+  }
+</style>
+{% endblock %}

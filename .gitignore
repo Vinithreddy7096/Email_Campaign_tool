@@ -1,0 +1,46 @@
+# ─── Secrets. Never commit. ──────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.private
+secrets/
+# DKIM private keys live in DKIM_KEY_DIR on the MTA host, delivered by Ansible
+# from Vault. If one ever appears in the tree, this stops the commit.
+**/opendkim/keys/
+*.vault
+
+# ─── Python ──────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+app/celerybeat-schedule
+
+# ─── Django ──────────────────────────────────────────────────────────────
+*.sqlite3
+/app/staticfiles/
+/app/mediafiles/
+local_settings.py
+
+# ─── Infrastructure ──────────────────────────────────────────────────────
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+*.retry
+
+# ─── Tooling / OS ────────────────────────────────────────────────────────
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

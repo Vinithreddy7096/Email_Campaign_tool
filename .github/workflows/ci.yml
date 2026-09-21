@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: mailer
+          POSTGRES_PASSWORD: mailer
+          POSTGRES_DB: mailer
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U mailer -d mailer"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+
+    env:
+      DJANGO_SETTINGS_MODULE: config.settings.local
+      # CI runs with the same safety posture as local dev: nothing may leave.
+      MOCK_MODE: "true"
+      GLOBAL_SEND_ENABLED: "false"
+      SECRET_KEY: ci-only-key-not-used-for-anything-that-matters
+      DATABASE_URL: postgres://mailer:mailer@localhost:5432/mailer
+      REDIS_URL: redis://localhost:6379/0
+      RABBITMQ_URL: amqp://guest:guest@localhost:5672//
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install
+        run: pip install ".[dev]"
+
+      - name: Lint
+        run: |
+          ruff check .
+          ruff format --check .
+
+      - name: Types
+        run: mypy app workers
+
+      - name: Django system check
+        run: python app/manage.py check
+
+      - name: Migrations are complete
+        run: python app/manage.py makemigrations --check --dry-run
+
+      - name: Tests
+        run: pytest -q --cov=app --cov=workers --cov-report=term-missing
+
+      - name: No secrets committed
+        run: |
+          if git ls-files | grep -E '(^|/)\.env$|\.pem$|\.key$|opendkim/keys/'; then
+            echo "::error::A secret-shaped file is tracked in git."
+            exit 1
+          fi

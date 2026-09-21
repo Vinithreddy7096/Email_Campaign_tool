@@ -1,0 +1,32 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Email Platform{% endblock %}</title>
+  <style>
+    /* Set colour and background together. Declaring one without the other
+       leaves dark-mode text on a white page. */
+    :root { color-scheme: light dark; }
+    body { margin: 0; background: #fff; color: #111; }
+    @media (prefers-color-scheme: dark) {
+      body { background: #0d0d0d; color: #e5e5e5; }
+    }
+  </style>
+</head>
+<body>
+  {# §5.3 item 5: the [MOCK] banner is rendered on every page, no exceptions. #}
+  {% if MOCK_MODE %}
+    <div role="status" style="background:#7c2d12;color:#fff;padding:.5rem 1rem;font:600 14px system-ui">
+      [MOCK] {{ ENVIRONMENT }} — all outbound SMTP is routed to the local sink. Nothing reaches the internet.
+    </div>
+  {% endif %}
+  {% if not GLOBAL_SEND_ENABLED %}
+    <div role="status" style="background:#1e3a8a;color:#fff;padding:.5rem 1rem;font:600 14px system-ui">
+      Sending is globally disabled (GLOBAL_SEND_ENABLED=false). No worker may hand off to an MTA.
+    </div>
+  {% endif %}
+
+  <main>{% block content %}{% endblock %}</main>
+</body>
+</html>

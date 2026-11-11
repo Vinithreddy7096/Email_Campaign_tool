@@ -106,8 +106,7 @@ def grant_statements(app_role: str) -> list[str]:
     # add exactly what the policy allows.
     stmts += [f"REVOKE ALL ON TABLE {_quote(t)} FROM {role}" for t in every_table]
     stmts += [
-        f"GRANT {', '.join(privs)} ON TABLE {_quote(t)} TO {role}"
-        for t, privs in policy().items()
+        f"GRANT {', '.join(privs)} ON TABLE {_quote(t)} TO {role}" for t, privs in policy().items()
     ]
     # nextval() for integer primary keys (email_templates, django.contrib.*).
     stmts.append(f"GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA {_quote(_schema())} TO {role}")

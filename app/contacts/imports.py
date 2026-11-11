@@ -410,8 +410,13 @@ def _apply_batch(imp: ContactImport, lst: ContactList, rows: list[_Row], tally: 
             accepted.append((row, contact))
 
     new = [
-        Contact(email=row.email, email_hash=row.hashed, first_name=row.first_name,
-                last_name=row.last_name, attributes=row.attributes)  # fmt: skip
+        Contact(
+            email=row.email,
+            email_hash=row.hashed,
+            first_name=row.first_name,
+            last_name=row.last_name,
+            attributes=row.attributes,
+        )  # fmt: skip
         for row, contact in accepted
         if contact is None
     ]
@@ -427,15 +432,23 @@ def _apply_batch(imp: ContactImport, lst: ContactList, rows: list[_Row], tally: 
         ConsentRecord.objects.bulk_create(
             [
                 ConsentRecord(
-                    contact=c, email_hash=c.email_hash, stream=Stream.MARKETING,
-                    contact_list=lst, action=ConsentRecord.Action.GRANTED,
+                    contact=c,
+                    email_hash=c.email_hash,
+                    stream=Stream.MARKETING,
+                    contact_list=lst,
+                    action=ConsentRecord.Action.GRANTED,
                     method=ConsentRecord.Method.IMPORT,
                     occurred_at=row.consent_at or imp.attested_at,
-                    source=imp.consent_source[:512], source_import=imp,
+                    source=imp.consent_source[:512],
+                    source_import=imp,
                     recorded_by=imp.attested_by,
                     # The attestation itself lives once, on the import (source_import).
-                    evidence={"import_id": str(imp.pk), "row": row.line, "file_sha256": file_sha,
-                              "consent_date_from_file": row.consent_at is not None},
+                    evidence={
+                        "import_id": str(imp.pk),
+                        "row": row.line,
+                        "file_sha256": file_sha,
+                        "consent_date_from_file": row.consent_at is not None,
+                    },
                 )  # fmt: skip
                 for row, c in resolved
             ],

@@ -58,7 +58,7 @@ def send_state() -> dict[str, str]:
 
     if not settings.GLOBAL_SEND_ENABLED:
         return {"tone": "bad", "text": "Sending disabled",
-                "detail": "GLOBAL_SEND_ENABLED=false — no worker hands off to an MTA"}  # fmt: skip
+                "detail": "Turned off in configuration (GLOBAL_SEND_ENABLED=false); nothing reaches the mail server"}  # fmt: skip
     if SendPause.objects.active().filter(scope=SendPause.Scope.GLOBAL).exists():
         return {"tone": "bad", "text": "All sending paused", "detail": "Emergency pause is on"}
     return {"tone": "ok", "text": "All sending running", "detail": ""}

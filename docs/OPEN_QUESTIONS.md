@@ -369,10 +369,9 @@ BUILD.md §3 names the root `email-platform/`. The supplied working directory is
 `email_app/`, which was used as the root directly rather than nesting a second
 project folder inside it. Everything below the root matches §3 exactly.
 
-## Q-SCRIPT-1 🟡 Deliberately unimplemented scripts
+## Q-SCRIPT-1 ✅ Scripts (resolved)
 
-`scripts/relay_test.py` exists but exits non-zero with an explanation — it
-needs a running MTA (Phase 5). `scripts/seed_dev.py` and `scripts/validate_dns.py`
-are now implemented. They depend on later phases. They
-fail loudly by design — a missing open-relay test must never be mistaken for a
-passing one.
+`scripts/relay_test.py`, `scripts/seed_dev.py` and `scripts/validate_dns.py` are
+all implemented. The relay test still fails loudly when it cannot reach an MTA
+(exit 2, inconclusive) — only exit 0 is a pass, so a missing open-relay test is
+never mistaken for a passing one.

@@ -57,8 +57,12 @@ app.conf.update(
     timezone="UTC",
     enable_utc=True,
     # Explicit: autodiscovery only finds a module literally named `tasks`.
-    imports=("workers.tasks.domains", "workers.tasks.delivery", "workers.tasks.events",
-             "workers.tasks.contacts"),
+    imports=(
+        "workers.tasks.domains",
+        "workers.tasks.delivery",
+        "workers.tasks.events",
+        "workers.tasks.contacts",
+    ),
     # Each pipeline stage on its own queue (§9.2), so a slow MTA cannot starve
     # rendering or expansion.
     task_routes={

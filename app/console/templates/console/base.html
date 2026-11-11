@@ -5,79 +5,195 @@
 <title>{% block title %}Console{% endblock %} · Email Platform</title>
 </head>
 <body>
+<a class="skip" href="#content">Skip to content</a>
+{% include "console/_icons.html" %}
 {% include "console/_safety.html" %}
 <div class="app">
-  <nav class="rail" aria-label="Sections">
-    <a class="brand" href="{% url 'console:today' %}">{% include "console/_brand.svg.html" %}<b>Email Platform<small>Operations console</small></b></a>
+  <nav class="rail" id="rail" aria-label="Sections">
+    <a class="brand" href="{% url 'console:today' %}"><span class="mark">{% include "console/_brand.svg.html" %}</span><b>Email Platform<small>Operations console</small></b></a>
     <div class="navs">
       <div class="navgroup">
         <span class="lbl">Overview</span>
-        <a class="nav" href="{% url 'console:today' %}" {% if nav == "overview" %}aria-current="page"{% endif %}>Today</a>
+        <a class="nav" href="{% url 'console:today' %}" {% if nav == "overview" %}aria-current="page"{% endif %}><svg class="ico" aria-hidden="true"><use href="#i-home"/></svg><span>Today</span></a>
       </div>
       <div class="navgroup">
         <span class="lbl">Sending</span>
-        <a class="nav" href="{% url 'console:campaigns' %}" {% if nav == "campaigns" %}aria-current="page"{% endif %}>Campaigns <span class="count">{{ counts.campaigns }}</span></a>
-        <a class="nav" href="{% url 'console:templates' %}" {% if nav == "templates" %}aria-current="page"{% endif %}>Templates <span class="count">{{ counts.templates }}</span></a>
-        <a class="nav" href="{% url 'console:approvals' %}" {% if nav == "approvals" %}aria-current="page"{% endif %}>Approvals {% if counts.approvals %}<span class="count">{{ counts.approvals }}</span>{% endif %}</a>
-        <a class="nav" href="{% url 'console:audience' %}" {% if nav == "audience" %}aria-current="page"{% endif %}>Contacts and consent</a>
+        <a class="nav" href="{% url 'console:campaigns' %}" {% if nav == "campaigns" %}aria-current="page"{% endif %}><svg class="ico" aria-hidden="true"><use href="#i-send"/></svg><span>Campaigns</span> <span class="count">{{ counts.campaigns }}</span></a>
+        <a class="nav" href="{% url 'console:templates' %}" {% if nav == "templates" %}aria-current="page"{% endif %}><svg class="ico" aria-hidden="true"><use href="#i-file"/></svg><span>Templates</span> <span class="count">{{ counts.templates }}</span></a>
+        <a class="nav" href="{% url 'console:approvals' %}" {% if nav == "approvals" %}aria-current="page"{% endif %}><svg class="ico" aria-hidden="true"><use href="#i-check"/></svg><span>Approvals</span> {% if counts.approvals %}<span class="count todo" title="Waiting for a decision">{{ counts.approvals }}</span>{% endif %}</a>
+        <a class="nav" href="{% url 'console:audience' %}" {% if nav == "audience" %}aria-current="page"{% endif %}><svg class="ico" aria-hidden="true"><use href="#i-users"/></svg><span>Contacts and consent</span></a>
       </div>
       <div class="navgroup">
         <span class="lbl">Deliverability</span>
-        <a class="nav" href="{% url 'console:domains' %}" {% if nav == "domains" %}aria-current="page"{% endif %}>Domains and senders</a>
-        <a class="nav" href="{% url 'console:events' %}" {% if nav == "events" %}aria-current="page"{% endif %}>Bounces and complaints {% if counts.review %}<span class="count">{{ counts.review }}</span>{% endif %}</a>
-        <a class="nav" href="{% url 'console:suppressions' %}" {% if nav == "suppressions" %}aria-current="page"{% endif %}>Suppression list</a>
-        <a class="nav" href="{% url 'console:controls' %}" {% if nav == "controls" %}aria-current="page"{% endif %}>Sending controls</a>
+        <a class="nav" href="{% url 'console:domains' %}" {% if nav == "domains" %}aria-current="page"{% endif %}><svg class="ico" aria-hidden="true"><use href="#i-globe"/></svg><span>Domains and senders</span></a>
+        <a class="nav" href="{% url 'console:events' %}" {% if nav == "events" %}aria-current="page"{% endif %}><svg class="ico" aria-hidden="true"><use href="#i-alert"/></svg><span>Bounces and complaints</span> {% if counts.review %}<span class="count todo" title="Waiting for review">{{ counts.review }}</span>{% endif %}</a>
+        <a class="nav" href="{% url 'console:suppressions' %}" {% if nav == "suppressions" %}aria-current="page"{% endif %}><svg class="ico" aria-hidden="true"><use href="#i-ban"/></svg><span>Suppression list</span></a>
+        <a class="nav" href="{% url 'console:controls' %}" {% if nav == "controls" %}aria-current="page"{% endif %}><svg class="ico" aria-hidden="true"><use href="#i-sliders"/></svg><span>Sending controls</span></a>
       </div>
       <div class="navgroup">
         <span class="lbl">Governance</span>
-        <a class="nav" href="{% url 'console:audit' %}" {% if nav == "audit" %}aria-current="page"{% endif %}>Audit log</a>
-        <a class="nav" href="{% url 'console:unsubscribe' %}" {% if nav == "unsubscribe" %}aria-current="page"{% endif %}>Unsubscribe page</a>
-        <a class="nav" href="/admin/">Admin (low-level)</a>
+        <a class="nav" href="{% url 'console:audit' %}" {% if nav == "audit" %}aria-current="page"{% endif %}><svg class="ico" aria-hidden="true"><use href="#i-list"/></svg><span>Audit log</span></a>
+        <a class="nav" href="{% url 'console:unsubscribe' %}" {% if nav == "unsubscribe" %}aria-current="page"{% endif %}><svg class="ico" aria-hidden="true"><use href="#i-mail"/></svg><span>Unsubscribe page</span></a>
+        <a class="nav" href="/admin/"><svg class="ico" aria-hidden="true"><use href="#i-cog"/></svg><span>Admin (low-level)</span></a>
       </div>
     </div>
     <div class="role">
-      <span>Signed in as</span>
-      <b>{{ user.email }}</b>
-      <div class="rolechips">{% for r in user_roles %}<span class="tag">{{ r }}</span>{% empty %}<span class="tag">no role</span>{% endfor %}</div>
-      <form method="post" action="{% url 'console:logout' %}">{% csrf_token %}<button class="btn" type="submit">Sign out</button></form>
+      <span class="avatar" aria-hidden="true">{{ user.email|slice:":1" }}</span>
+      <div class="who" title="Signed in as {{ user.email }}">
+        <b>{{ user.email }}</b>
+        <span>{% for r in user_roles %}{{ r }}{% if not forloop.last %}, {% endif %}{% empty %}no role{% endfor %}</span>
+      </div>
+      <form method="post" action="{% url 'console:logout' %}">{% csrf_token %}<button class="iconbtn" type="submit" title="Sign out" aria-label="Sign out"><svg class="ico" aria-hidden="true"><use href="#i-logout"/></svg></button></form>
     </div>
   </nav>
+  <button class="scrim" type="button" data-nav-close aria-label="Close menu" tabindex="-1"></button>
 
   <main class="main">
     <div class="topbar">
-      <span class="sendstate {{ send_state.tone }}" title="{{ send_state.detail }}"><span class="dot"></span><span>{{ send_state.text }}</span></span>
-      {% if send_state.detail %}<span class="muted">· {{ send_state.detail }}</span>{% endif %}
-      <span>·</span><span>{{ ENVIRONMENT|capfirst }}</span>
+      <button class="iconbtn menubtn" type="button" data-nav-open aria-label="Open menu" aria-controls="rail" aria-expanded="false"><svg class="ico" aria-hidden="true"><use href="#i-menu"/></svg></button>
+      <a class="sendstate {{ send_state.tone }}" href="{% url 'console:controls' %}" title="{{ send_state.detail|default:'Open sending controls' }}"><span class="dot"></span><span>{{ send_state.text }}</span></a>
+      <span class="envchip">{{ ENVIRONMENT|capfirst }}</span>
+      {% if send_state.detail %}<span class="detail">{{ send_state.detail }}</span>{% endif %}
       <span class="spacer"></span>
       {% if not MFA_ENFORCED %}<span class="q" title="MFA_ENFORCED=false — local development only">MFA off</span>{% endif %}
       {% if MOCK_MODE %}<a class="tag" href="http://localhost:8025" target="_blank" rel="noreferrer">MailHog sink ↗</a>{% endif %}
+      <button class="jump" type="button" data-palette-open aria-label="Jump to a page or action" aria-keyshortcuts="Control+K Meta+K"><svg class="ico" aria-hidden="true"><use href="#i-search"/></svg><span>Jump to…</span><kbd>Ctrl K</kbd></button>
+      <button class="iconbtn theme" type="button" data-theme-toggle aria-label="Switch between light and dark" title="Switch between light and dark"><svg class="ico sun" aria-hidden="true"><use href="#i-sun"/></svg><svg class="ico moon" aria-hidden="true"><use href="#i-moon"/></svg></button>
     </div>
-    <section class="page">{% block content %}{% endblock %}</section>
+    <section class="page" id="content">{% block content %}{% endblock %}</section>
   </main>
 </div>
 
+<dialog class="palette" id="palette" aria-label="Jump to a page or action">
+  <div class="palette-in"><svg class="ico" aria-hidden="true"><use href="#i-search"/></svg><input type="search" placeholder="Jump to a page or action…" aria-label="Filter pages and actions" autocomplete="off" spellcheck="false"><kbd>Esc</kbd></div>
+  <div class="palette-list">
+    <span class="lbl">Actions</span>
+    {% if perms.campaigns.add_campaign %}<a class="cmd" href="{% url 'console:campaign_new' %}"><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg>New campaign</a>{% endif %}
+    {% if perms.email_templates.add_emailtemplate %}<a class="cmd" href="{% url 'console:template_new' %}"><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg>New template</a>{% endif %}
+    {% if perms.contacts.add_contactimport %}<a class="cmd" href="{% url 'console:contact_import_new' %}"><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg>Import contacts</a>{% endif %}
+    <a class="cmd" href="{% url 'console:controls' %}"><svg class="ico" aria-hidden="true"><use href="#i-sliders"/></svg>Pause or resume sending</a>
+    <span class="lbl">Pages</span>
+    <a class="cmd" href="{% url 'console:today' %}"><svg class="ico" aria-hidden="true"><use href="#i-home"/></svg>Today</a>
+    <a class="cmd" href="{% url 'console:campaigns' %}"><svg class="ico" aria-hidden="true"><use href="#i-send"/></svg>Campaigns</a>
+    <a class="cmd" href="{% url 'console:templates' %}"><svg class="ico" aria-hidden="true"><use href="#i-file"/></svg>Templates</a>
+    <a class="cmd" href="{% url 'console:approvals' %}"><svg class="ico" aria-hidden="true"><use href="#i-check"/></svg>Approvals</a>
+    <a class="cmd" href="{% url 'console:audience' %}"><svg class="ico" aria-hidden="true"><use href="#i-users"/></svg>Contacts and consent</a>
+    <a class="cmd" href="{% url 'console:domains' %}"><svg class="ico" aria-hidden="true"><use href="#i-globe"/></svg>Domains and senders</a>
+    <a class="cmd" href="{% url 'console:events' %}"><svg class="ico" aria-hidden="true"><use href="#i-alert"/></svg>Bounces and complaints</a>
+    <a class="cmd" href="{% url 'console:suppressions' %}"><svg class="ico" aria-hidden="true"><use href="#i-ban"/></svg>Suppression list</a>
+    <a class="cmd" href="{% url 'console:controls' %}"><svg class="ico" aria-hidden="true"><use href="#i-sliders"/></svg>Sending controls</a>
+    <a class="cmd" href="{% url 'console:audit' %}"><svg class="ico" aria-hidden="true"><use href="#i-list"/></svg>Audit log</a>
+    <a class="cmd" href="{% url 'console:unsubscribe' %}"><svg class="ico" aria-hidden="true"><use href="#i-mail"/></svg>Unsubscribe page</a>
+    <p class="palette-empty" hidden>Nothing matches.</p>
+  </div>
+</dialog>
+
 {% if messages %}
 <div class="toasts" role="status" aria-live="polite">
-  {% for m in messages %}<div class="toast {{ m.tags }}">{{ m }}</div>{% endfor %}
+  {% for m in messages %}<div class="toast {{ m.tags }}"><span>{{ m }}</span></div>{% endfor %}
 </div>
 {% endif %}
 <script>
-/* Toasts fade after a while; errors stay until clicked. */
-document.querySelectorAll('.toast').forEach(function (t) {
-  t.addEventListener('click', function () { t.remove(); });
-  if (!t.classList.contains('error')) setTimeout(function () { t.remove(); }, 6000);
-});
-/* Whole-row links (tr[data-href]) */
-document.querySelectorAll('tr[data-href]').forEach(function (tr) {
-  tr.addEventListener('click', function (e) { if (!e.target.closest('a,button,form')) location.href = tr.dataset.href; });
-});
-/* Confirm panels: [data-confirm-open="id"] reveals #id, [data-confirm-close] hides its panel. */
-document.querySelectorAll('[data-confirm-open]').forEach(function (b) {
-  b.addEventListener('click', function () { document.getElementById(b.dataset.confirmOpen).hidden = false; });
-});
-document.querySelectorAll('[data-confirm-close]').forEach(function (b) {
-  b.addEventListener('click', function () { b.closest('.confirm').hidden = true; });
-});
+(function () {
+  var root = document.documentElement, body = document.body;
+  var each = function (sel, fn) { document.querySelectorAll(sel).forEach(fn); };
+
+  /* Toasts fade after a while; errors stay until clicked. */
+  each('.toast', function (t) {
+    t.addEventListener('click', function () { t.remove(); });
+    if (!t.classList.contains('error')) setTimeout(function () { t.remove(); }, 6000);
+  });
+  /* Whole-row links (tr[data-href]) */
+  each('tr[data-href]', function (tr) {
+    tr.addEventListener('click', function (e) { if (!e.target.closest('a,button,form,input,select')) location.href = tr.dataset.href; });
+  });
+  /* Confirm panels: [data-confirm-open="id"] reveals #id, [data-confirm-close] hides its panel. */
+  each('[data-confirm-open]', function (b) {
+    b.addEventListener('click', function () {
+      var panel = document.getElementById(b.dataset.confirmOpen);
+      panel.hidden = false;
+      var first = panel.querySelector('input:not([type=hidden]),textarea,select,button');
+      if (first) first.focus();
+    });
+  });
+  each('[data-confirm-close]', function (b) {
+    b.addEventListener('click', function () { b.closest('.confirm').hidden = true; });
+  });
+  /* A submitted form shows progress on the button that sent it, and cannot be sent twice.
+     The button is not disabled: that would drop its name/value from the request. */
+  document.addEventListener('submit', function (e) {
+    var btn = e.submitter;
+    if (e.defaultPrevented || !btn || e.target.method !== 'post') return;
+    if (btn.classList.contains('is-busy')) { e.preventDefault(); return; }
+    btn.classList.add('is-busy'); btn.setAttribute('aria-busy', 'true');
+  });
+  window.addEventListener('pageshow', function () {
+    each('.is-busy', function (b) { b.classList.remove('is-busy'); b.removeAttribute('aria-busy'); });
+  });
+
+  /* Light / dark: follows the system until the operator picks one. */
+  each('[data-theme-toggle]', function (b) {
+    b.addEventListener('click', function () {
+      var dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+      root.dataset.theme = dark ? 'light' : 'dark';
+      try { localStorage.setItem('ep-theme', root.dataset.theme); } catch (err) { /* private mode */ }
+    });
+  });
+
+  /* Navigation drawer on small screens. */
+  var menu = document.querySelector('[data-nav-open]');
+  function drawer(open) {
+    body.classList.toggle('nav-open', open);
+    if (menu) menu.setAttribute('aria-expanded', String(open));
+    if (open) { var cur = document.querySelector('.rail .nav'); if (cur) cur.focus(); } else if (menu) menu.focus();
+  }
+  if (menu) menu.addEventListener('click', function () { drawer(true); });
+  each('[data-nav-close]', function (b) { b.addEventListener('click', function () { drawer(false); }); });
+
+  /* Jump-to dialog: Ctrl/⌘ K, or "/" when not typing. */
+  var pal = document.getElementById('palette');
+  if (pal && pal.showModal) {
+    var input = pal.querySelector('input'), list = pal.querySelector('.palette-list');
+    var cmds = Array.prototype.slice.call(list.querySelectorAll('.cmd'));
+    var labels = list.querySelectorAll('.lbl'), none = list.querySelector('.palette-empty'), sel = -1;
+    var shown = function () { return cmds.filter(function (c) { return !c.hidden; }); };
+    var pick = function (i) {
+      var v = shown(); if (!v.length) { sel = -1; return; }
+      sel = (i + v.length) % v.length;
+      cmds.forEach(function (c) { c.classList.remove('sel'); });
+      v[sel].classList.add('sel'); v[sel].scrollIntoView({ block: 'nearest' });
+    };
+    var filter = function () {
+      var q = input.value.trim().toLowerCase();
+      cmds.forEach(function (c) { c.hidden = q !== '' && c.textContent.toLowerCase().indexOf(q) < 0; });
+      labels.forEach(function (l) {
+        var n = l.nextElementSibling, any = false;
+        while (n && n.classList.contains('cmd')) { if (!n.hidden) any = true; n = n.nextElementSibling; }
+        l.hidden = !any;
+      });
+      none.hidden = shown().length > 0;
+      pick(0);
+    };
+    var open = function () { if (pal.open) return; input.value = ''; pal.showModal(); filter(); input.focus(); };
+    each('[data-palette-open]', function (b) { b.addEventListener('click', open); });
+    if (/Mac|iPhone|iPad/.test(navigator.platform)) each('.jump kbd', function (k) { k.textContent = '⌘ K'; });
+    input.addEventListener('input', filter);
+    pal.addEventListener('click', function (e) { if (e.target === pal) pal.close(); });
+    pal.addEventListener('keydown', function (e) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); pick(sel + 1); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); pick(sel - 1); }
+      else if (e.key === 'Enter') { var v = shown(); if (v[sel]) { e.preventDefault(); location.href = v[sel].href; } }
+    });
+    document.addEventListener('keydown', function (e) {
+      var typing = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable;
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); open(); }
+      else if (e.key === '/' && !typing && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); open(); }
+    });
+  }
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && body.classList.contains('nav-open')) drawer(false);
+  });
+})();
 </script>
 {% block scripts %}{% endblock %}
 </body>

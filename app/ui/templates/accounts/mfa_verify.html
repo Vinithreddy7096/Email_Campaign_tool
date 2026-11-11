@@ -2,7 +2,7 @@
 {% block title %}Two-factor verification · Email Platform{% endblock %}
 
 {% block card %}
-  <span class="from">Email Platform · operations console</span>
+  <span class="from"><span class="mark">{% include "console/_brand.svg.html" %}</span>Email Platform · operations console</span>
   <h1>Two-factor verification</h1>
   <p>Enter the 6-digit code from your authenticator app.</p>
   {% if error %}<div class="note bad" role="alert">{{ error }}</div>{% endif %}

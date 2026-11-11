@@ -5,5 +5,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Schibsted+Grotesk:wght@600;700&display=swap">
+{# Apply a saved light/dark choice before first paint (no flash). #}
+<script>try { var t = localStorage.getItem('ep-theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch (e) {}</script>
 <link rel="stylesheet" href="{% static 'console/tokens.css' %}">
 <link rel="stylesheet" href="{% static 'console/console.css' %}">

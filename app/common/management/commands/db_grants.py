@@ -23,7 +23,9 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument("--app-role", help="The role web and worker processes connect as.")
-        parser.add_argument("--apply", action="store_true", help="Run the SQL instead of printing it.")
+        parser.add_argument(
+            "--apply", action="store_true", help="Run the SQL instead of printing it."
+        )
         parser.add_argument("--check", action="store_true",
                             help="Report how the role in DATABASE_URL exceeds the policy; exit 1 if it does.")  # fmt: skip
 
@@ -44,7 +46,9 @@ class Command(BaseCommand):
                         [role])  # fmt: skip
             me, exists = cur.fetchone()
         if not exists:
-            raise CommandError(f"role {role!r} does not exist; create it first (docs/DEPLOYMENT.md)")
+            raise CommandError(
+                f"role {role!r} does not exist; create it first (docs/DEPLOYMENT.md)"
+            )
         if role == me:
             raise CommandError(
                 f"{role!r} is the role running this command, i.e. the table owner. "

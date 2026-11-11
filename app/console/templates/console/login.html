@@ -2,7 +2,7 @@
 {% block title %}Sign in · Email Platform{% endblock %}
 
 {% block card %}
-  <span class="from">Email Platform · operations console</span>
+  <span class="from"><span class="mark">{% include "console/_brand.svg.html" %}</span>Email Platform · operations console</span>
   <h1>Sign in</h1>
   {% if form.errors %}<div class="note bad">That email and password didn't match.</div>{% endif %}
   <form method="post" class="stack" style="gap:12px">{% csrf_token %}

@@ -1,32 +1,48 @@
-/* Design tokens — from docs/design/console-mockup.html. Loaded by the console,
-   the public pages and the themed Django admin. Variables only. */
+/* Design tokens. Loaded by the console, the public pages and the themed Django
+   admin. Variables only. Started from docs/design/console-mockup.html; the
+   palette, elevation and radius scale have since been refined here. */
 :root {
-  --bg: #f3f5f8;
+  --bg: #f5f6f9;
   --surface: #ffffff;
-  --sunk: #eaeef3;
-  --ink: #17212c;
-  --muted: #5a6776;
-  --line: #d9dfe7;
-  --accent: #2a5ba3;
-  --accent-soft: #e3ebf7;
-  --ok: #1d7a4c;   --ok-soft: #dff2e8;
-  --warn: #9a640a; --warn-soft: #fbefd8;
-  --bad: #b2352d;  --bad-soft: #f8e1df;
-  --idle: #6b7684; --idle-soft: #e8ecf0;
+  --sunk: #eef0f5;
+  --ink: #121a26;
+  --muted: #5a6577;
+  --line: #e2e6ed;
+  --line-strong: #cbd2dc;
+  --accent: #2f55d4;
+  --accent-hover: #2647b8;
+  --accent-soft: #e8edfc;
+  --on-accent: #ffffff;
+  --ok: #17794a;   --ok-soft: #e0f3e8;
+  --warn: #93600a; --warn-soft: #fbf0d9;
+  --bad: #b5332b;  --bad-soft: #fae4e2;
+  --idle: #5f6b7a; --idle-soft: #e9edf2;
   --mock: #a8460c;
+  --ring: rgba(47, 85, 212, .28);
+  --shadow-sm: 0 1px 2px rgba(18, 26, 38, .06);
+  --shadow-md: 0 4px 16px -4px rgba(18, 26, 38, .12), 0 1px 3px rgba(18, 26, 38, .06);
+  --shadow-lg: 0 24px 60px -16px rgba(18, 26, 38, .28), 0 4px 12px rgba(18, 26, 38, .08);
+  --scrim: rgba(18, 26, 38, .42);
   --f-display: "Schibsted Grotesk", "Helvetica Neue", Arial, sans-serif;
   --f-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
   --f-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
-  --r: 6px;
+  --r: 10px;
+  --r-sm: 7px;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
-  --bg: #0e1319; --surface: #151c24; --sunk: #1b232d; --ink: #e2e8ef; --muted: #94a1b0; --line: #29343f;
-  --accent: #82a9e6; --accent-soft: #1d2a3d;
-  --ok: #55c391; --ok-soft: #15301f; --warn: #e2ab4c; --warn-soft: #33270f; --bad: #f07d72; --bad-soft: #3a1c1a; --idle: #9aa5b2; --idle-soft: #232c36;
+  --bg: #0b0f15; --surface: #121821; --sunk: #19212c; --ink: #e4e9f0; --muted: #94a0b1; --line: #222c39; --line-strong: #344152;
+  --accent: #8ba7ff; --accent-hover: #a3b9ff; --accent-soft: #1b2644; --on-accent: #0b1020;
+  --ok: #58c794; --ok-soft: #13301f; --warn: #e4ae52; --warn-soft: #33270f; --bad: #f28379; --bad-soft: #3b1c1a; --idle: #9ba6b4; --idle-soft: #222b36;
+  --ring: rgba(139, 167, 255, .35);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .4); --shadow-md: 0 6px 20px -6px rgba(0, 0, 0, .6); --shadow-lg: 0 24px 60px -16px rgba(0, 0, 0, .75);
+  --scrim: rgba(0, 0, 0, .6);
   color-scheme: dark; } }
 :root[data-theme="dark"] {
-  --bg: #0e1319; --surface: #151c24; --sunk: #1b232d; --ink: #e2e8ef; --muted: #94a1b0; --line: #29343f;
-  --accent: #82a9e6; --accent-soft: #1d2a3d;
-  --ok: #55c391; --ok-soft: #15301f; --warn: #e2ab4c; --warn-soft: #33270f; --bad: #f07d72; --bad-soft: #3a1c1a; --idle: #9aa5b2; --idle-soft: #232c36;
+  --bg: #0b0f15; --surface: #121821; --sunk: #19212c; --ink: #e4e9f0; --muted: #94a0b1; --line: #222c39; --line-strong: #344152;
+  --accent: #8ba7ff; --accent-hover: #a3b9ff; --accent-soft: #1b2644; --on-accent: #0b1020;
+  --ok: #58c794; --ok-soft: #13301f; --warn: #e4ae52; --warn-soft: #33270f; --bad: #f28379; --bad-soft: #3b1c1a; --idle: #9ba6b4; --idle-soft: #222b36;
+  --ring: rgba(139, 167, 255, .35);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .4); --shadow-md: 0 6px 20px -6px rgba(0, 0, 0, .6); --shadow-lg: 0 24px 60px -16px rgba(0, 0, 0, .75);
+  --scrim: rgba(0, 0, 0, .6);
   color-scheme: dark; }

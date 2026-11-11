@@ -2,7 +2,7 @@
 {% block title %}Set up two-factor authentication · Email Platform{% endblock %}
 
 {% block card %}
-  <span class="from">Email Platform · operations console</span>
+  <span class="from"><span class="mark">{% include "console/_brand.svg.html" %}</span>Email Platform · operations console</span>
   <h1>Set up two-factor authentication</h1>
   <p>{% if required %}Your role requires a second factor before you can continue. {% endif %}Add this key to an authenticator app (1Password, Google Authenticator, Aegis…), then enter the 6-digit code it shows.</p>
   <code class="key" data-mfa-secret>{{ secret_display }}</code>

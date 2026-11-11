@@ -1,0 +1,29 @@
+# {{ ansible_managed | default("Rendered from mta/opendkim/opendkim.conf.j2 — do not edit on the host") }}
+#
+# DKIM signing milter for Postfix (BUILD.md §10.10; spec §6 allows OpenDKIM).
+# Signs mail from InternalHosts (the app networks); verifies nothing.
+
+Syslog                  yes
+SyslogSuccess           no
+LogWhy                  yes
+UMask                   007
+UserID                  opendkim:opendkim
+PidFile                 /run/opendkim/opendkim.pid
+Socket                  {{ opendkim_listen }}
+
+Mode                    s
+Canonicalization        relaxed/relaxed
+SignatureAlgorithm      rsa-sha256
+# The DNS checker already warns below 2048 bits; refuse to sign with less.
+MinimumKeyBits          2048
+# Sign From twice so a second From header added in transit breaks the signature.
+OversignHeaders         From
+SubDomains              no
+
+KeyTable                refile:/etc/opendkim/KeyTable
+SigningTable            refile:/etc/opendkim/SigningTable
+InternalHosts           refile:/etc/opendkim/TrustedHosts
+ExternalIgnoreList      refile:/etc/opendkim/TrustedHosts
+
+# Keys must be owned by opendkim and not readable by anyone else.
+RequireSafeKeys         yes

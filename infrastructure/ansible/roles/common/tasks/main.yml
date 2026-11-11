@@ -1,0 +1,185 @@
+# Baseline for every host: time, updates, journald, SSH, firewall, node_exporter, log shipping.
+- name: Packages
+  ansible.builtin.apt:
+    name: "{{ common_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: UTC everywhere (log timestamps line up across hosts)
+  ansible.builtin.file:
+    src: /usr/share/zoneinfo/Etc/UTC
+    dest: /etc/localtime
+    state: link
+    force: true
+
+- name: Unattended security updates
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    mode: "0644"
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+
+- name: Journal drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/journald.conf.d
+    state: directory
+    mode: "0755"
+
+- name: Persistent, bounded journal
+  ansible.builtin.copy:
+    dest: /etc/systemd/journald.conf.d/10-email-platform.conf
+    mode: "0644"
+    content: |
+      [Journal]
+      Storage=persistent
+      SystemMaxUse={{ journald_max_use }}
+  notify: Restart journald
+
+- name: Is sshd installed?
+  ansible.builtin.stat:
+    path: /usr/sbin/sshd
+  register: sshd_binary
+
+- name: SSH hardening (keys only, no root)
+  ansible.builtin.copy:
+    dest: /etc/ssh/sshd_config.d/10-email-platform.conf
+    mode: "0644"
+    content: |
+      PermitRootLogin no
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      X11Forwarding no
+      MaxAuthTries 3
+    validate: /usr/sbin/sshd -t -f %s
+  when: common_ssh_hardening | bool and sshd_binary.stat.exists
+  notify: Reload sshd
+
+# ─── Firewall ────────────────────────────────────────────────────────────
+- name: nftables
+  when: common_firewall | bool
+  block:
+    - name: Package
+      ansible.builtin.apt:
+        name: nftables
+        state: present
+    - name: Rules (validated before they replace the running set)
+      ansible.builtin.template:
+        src: nftables.conf.j2
+        dest: /etc/nftables.conf
+        mode: "0644"
+        validate: nft -c -f %s
+      notify: Reload nftables
+    - name: Enabled
+      ansible.builtin.systemd:
+        name: nftables
+        enabled: true
+        state: started
+
+# ─── node_exporter ───────────────────────────────────────────────────────
+- name: node_exporter user
+  ansible.builtin.user:
+    name: node_exporter
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: Textfile collector group
+  ansible.builtin.group:
+    name: textfile
+    system: true
+
+- name: Textfile collector directory
+  ansible.builtin.file:
+    path: "{{ node_exporter_textfile_dir }}"
+    state: directory
+    owner: root
+    group: textfile
+    mode: "0775"
+
+- name: node_exporter release
+  vars:
+    arch: "{{ {'x86_64': 'amd64', 'aarch64': 'arm64'}[ansible_architecture] }}"
+    base: "https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}"
+    tarball: "node_exporter-{{ node_exporter_version }}.linux-{{ arch }}.tar.gz"
+  block:
+    - name: Download (checksum from the release's sha256sums.txt)
+      ansible.builtin.get_url:
+        url: "{{ base }}/{{ tarball }}"
+        dest: "/var/cache/{{ tarball }}"
+        checksum: "sha256:{{ base }}/sha256sums.txt"
+        mode: "0644"
+      register: node_exporter_tarball
+    - name: Install
+      ansible.builtin.unarchive:
+        src: "/var/cache/{{ tarball }}"
+        dest: /usr/local/bin
+        remote_src: true
+        extra_opts: [--strip-components=1, --wildcards, "*/node_exporter"]
+      when: node_exporter_tarball.changed
+      notify: Restart node_exporter
+
+- name: node_exporter service
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/node_exporter.service
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Prometheus node_exporter
+      After=network-online.target
+      [Service]
+      User=node_exporter
+      ExecStart=/usr/local/bin/node_exporter --web.listen-address={{ node_exporter_listen }} \
+        --collector.textfile.directory={{ node_exporter_textfile_dir }} --collector.systemd
+      Restart=always
+      NoNewPrivileges=yes
+      ProtectSystem=strict
+      ProtectHome=yes
+      [Install]
+      WantedBy=multi-user.target
+  notify: Restart node_exporter
+
+- name: node_exporter running
+  ansible.builtin.systemd:
+    name: node_exporter
+    enabled: true
+    state: started
+    daemon_reload: true
+
+# ─── Log shipping (Grafana Alloy → Loki) ─────────────────────────────────
+- name: Alloy
+  when: loki_push_url | length > 0
+  block:
+    - name: Grafana signing key
+      ansible.builtin.get_url:
+        url: https://apt.grafana.com/gpg.key
+        dest: /usr/share/keyrings/grafana.asc
+        mode: "0644"
+    - name: Grafana repository
+      ansible.builtin.copy:
+        dest: /etc/apt/sources.list.d/grafana.list
+        mode: "0644"
+        content: "deb [signed-by=/usr/share/keyrings/grafana.asc] https://apt.grafana.com stable main\n"
+      register: grafana_repo
+    - name: Package
+      ansible.builtin.apt:
+        name: alloy
+        state: present
+        update_cache: "{{ grafana_repo.changed }}"
+    - name: alloy may read the journal
+      ansible.builtin.user:
+        name: alloy
+        groups: [systemd-journal]
+        append: true
+    - name: Configuration
+      ansible.builtin.template:
+        src: alloy.config.j2
+        dest: /etc/alloy/config.alloy
+        mode: "0644"
+      notify: Restart alloy
+    - name: Running
+      ansible.builtin.systemd:
+        name: alloy
+        enabled: true
+        state: started

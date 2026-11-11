@@ -1,0 +1,239 @@
+# PostgreSQL 16 + pgBackRest point-in-time recovery.
+- name: Refuse unsafe settings before touching the host
+  ansible.builtin.assert:
+    that:
+      - postgres_app_networks | length > 0
+      - "'0.0.0.0/0' not in postgres_app_networks"
+      - "'::/0' not in postgres_app_networks"
+      - pgbackrest_repo_type in ['s3', 'posix']
+      - pgbackrest_cipher_pass | length >= 32
+    fail_msg: Database networks must be specific, and the backup cipher passphrase at least 32 characters.
+
+- name: Prerequisites
+  ansible.builtin.apt:
+    # acl: lets Ansible `become` the unprivileged postgres user safely.
+    name: [acl, ca-certificates, curl, gnupg, python3]
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+# ─── PGDG repository (Debian ships 15; the app is built and tested on 16) ──
+- name: PGDG signing key
+  ansible.builtin.get_url:
+    url: https://www.postgresql.org/media/keys/ACCC4CF8.asc
+    dest: /usr/share/keyrings/apt.postgresql.org.asc
+    mode: "0644"
+
+- name: PGDG repository
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/pgdg.list
+    mode: "0644"
+    content: >
+      deb [signed-by=/usr/share/keyrings/apt.postgresql.org.asc]
+      https://apt.postgresql.org/pub/repos/apt {{ ansible_distribution_release }}-pgdg main
+  register: pgdg_repo
+
+- name: Packages
+  ansible.builtin.apt:
+    name:
+      - "postgresql-{{ postgres_version }}"
+      - "postgresql-client-{{ postgres_version }}"
+      - pgbackrest
+    state: present
+    update_cache: "{{ pgdg_repo.changed }}"
+
+# ─── Configuration ───────────────────────────────────────────────────────
+- name: Server settings (conf.d)
+  ansible.builtin.template:
+    src: email-platform.conf.j2
+    dest: "{{ postgres_conf_dir }}/conf.d/10-email-platform.conf"
+    owner: postgres
+    group: postgres
+    mode: "0644"
+  notify: Restart postgresql
+
+- name: Client authentication
+  ansible.builtin.template:
+    src: pg_hba.conf.j2
+    dest: "{{ postgres_conf_dir }}/pg_hba.conf"
+    owner: postgres
+    group: postgres
+    mode: "0640"
+  notify: Reload postgresql
+
+- name: pgBackRest configuration directory
+  ansible.builtin.file:
+    path: /etc/pgbackrest
+    state: directory
+    owner: postgres
+    group: postgres
+    mode: "0750"
+
+- name: pgBackRest configuration (repository credentials, cipher passphrase)
+  ansible.builtin.template:
+    src: pgbackrest.conf.j2
+    dest: /etc/pgbackrest/pgbackrest.conf
+    owner: postgres
+    group: postgres
+    mode: "0640"
+  no_log: true
+
+- name: No second, stale pgBackRest config
+  ansible.builtin.file:
+    path: /etc/pgbackrest.conf
+    state: absent
+
+- name: Local repository directory (posix repos only)
+  ansible.builtin.file:
+    path: "{{ pgbackrest_repo_path }}"
+    state: directory
+    owner: postgres
+    group: postgres
+    mode: "0750"
+  when: pgbackrest_repo_type == 'posix'
+
+- name: Apply settings now (archiving must be on before the stanza is created)
+  ansible.builtin.meta: flush_handlers
+
+- name: PostgreSQL running
+  ansible.builtin.systemd:
+    name: "postgresql@{{ postgres_version }}-main"
+    state: started
+    enabled: true
+
+# ─── Roles and database ──────────────────────────────────────────────────
+- name: Application and backup roles, application database
+  ansible.builtin.command:
+    cmd: psql -X -v ON_ERROR_STOP=1 -d postgres
+    stdin: |
+      SELECT 'CREATE ROLE {{ postgres_app_user }} LOGIN'
+        WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{{ postgres_app_user }}') \gexec
+      ALTER ROLE {{ postgres_app_user }} PASSWORD '{{ postgres_app_password | replace("'", "''") }}';
+      SELECT 'CREATE ROLE {{ postgres_backup_user }} LOGIN'
+        WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{{ postgres_backup_user }}') \gexec
+      ALTER ROLE {{ postgres_backup_user }} PASSWORD '{{ postgres_backup_password | replace("'", "''") }}';
+      GRANT pg_read_all_data TO {{ postgres_backup_user }};
+      SELECT 'CREATE DATABASE {{ postgres_db }} OWNER {{ postgres_app_user }}'
+        WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '{{ postgres_db }}') \gexec
+  become: true
+  become_user: postgres
+  no_log: true
+  changed_when: false
+
+# ─── pgBackRest ──────────────────────────────────────────────────────────
+- name: Stanza (idempotent)
+  ansible.builtin.command: pgbackrest --stanza={{ pgbackrest_stanza }} stanza-create
+  become: true
+  become_user: postgres
+  changed_when: false
+
+- name: Archiving and the repository work end to end
+  ansible.builtin.command: pgbackrest --stanza={{ pgbackrest_stanza }} check
+  become: true
+  become_user: postgres
+  changed_when: false
+
+- name: Existing backups
+  ansible.builtin.command: pgbackrest --stanza={{ pgbackrest_stanza }} --output=json info
+  become: true
+  become_user: postgres
+  register: pgbackrest_info
+  changed_when: false
+
+- name: First full backup (only if there is none yet)
+  ansible.builtin.command: pgbackrest --stanza={{ pgbackrest_stanza }} --type=full backup
+  become: true
+  become_user: postgres
+  when: (pgbackrest_info.stdout | from_json)[0].backup | default([]) | length == 0
+  changed_when: true
+
+- name: Textfile collector group (metrics written by non-root services)
+  ansible.builtin.group:
+    name: textfile
+    system: true
+
+- name: postgres may write metrics
+  ansible.builtin.user:
+    name: postgres
+    groups: [textfile]
+    append: true
+
+- name: Textfile collector directory
+  ansible.builtin.file:
+    path: "{{ node_exporter_textfile_dir }}"
+    state: directory
+    owner: root
+    group: textfile
+    mode: "0775"
+
+- name: Metrics script
+  ansible.builtin.copy:
+    src: pgbackrest-metrics
+    dest: /usr/local/bin/pgbackrest-metrics
+    mode: "0755"
+
+- name: Backup, metrics units
+  ansible.builtin.copy:
+    dest: "/etc/systemd/system/{{ item.name }}"
+    mode: "0644"
+    content: "{{ item.body }}"
+  loop:
+    - name: pgbackrest-backup@.service
+      body: |
+        [Unit]
+        Description=pgBackRest %i backup of {{ pgbackrest_stanza }}
+        After=postgresql.service
+        [Service]
+        Type=oneshot
+        User=postgres
+        ExecStart=/usr/bin/pgbackrest --stanza={{ pgbackrest_stanza }} --type=%i backup
+        ExecStartPost=/usr/local/bin/pgbackrest-metrics
+        Environment=PGBACKREST_STANZA={{ pgbackrest_stanza }} TEXTFILE_DIR={{ node_exporter_textfile_dir }}
+        TimeoutStartSec=12h
+    - name: pgbackrest-full.timer
+      body: |
+        [Unit]
+        Description=Weekly full backup
+        [Timer]
+        OnCalendar={{ pgbackrest_full_schedule }}
+        Persistent=true
+        Unit=pgbackrest-backup@full.service
+        [Install]
+        WantedBy=timers.target
+    - name: pgbackrest-diff.timer
+      body: |
+        [Unit]
+        Description=Daily differential backup
+        [Timer]
+        OnCalendar={{ pgbackrest_diff_schedule }}
+        Persistent=true
+        Unit=pgbackrest-backup@diff.service
+        [Install]
+        WantedBy=timers.target
+    - name: pgbackrest-metrics.service
+      body: |
+        [Unit]
+        Description=pgBackRest and WAL archive metrics
+        [Service]
+        Type=oneshot
+        User=postgres
+        Environment=PGBACKREST_STANZA={{ pgbackrest_stanza }} TEXTFILE_DIR={{ node_exporter_textfile_dir }}
+        ExecStart=/usr/local/bin/pgbackrest-metrics
+    - name: pgbackrest-metrics.timer
+      body: |
+        [Unit]
+        Description=pgBackRest and WAL archive metrics, every minute
+        [Timer]
+        OnBootSec=1min
+        OnUnitActiveSec=1min
+        [Install]
+        WantedBy=timers.target
+  register: pgbackrest_units
+
+- name: Timers enabled
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+    daemon_reload: "{{ pgbackrest_units.changed }}"
+  loop: [pgbackrest-full.timer, pgbackrest-diff.timer, pgbackrest-metrics.timer]

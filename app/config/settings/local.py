@@ -12,4 +12,8 @@ if not SECRET_KEY:
 
 INTERNAL_IPS = ["127.0.0.1"]
 
+# No collectstatic step locally: serve CSS straight from the app directories.
+WHITENOISE_USE_FINDERS = True
+WHITENOISE_AUTOREFRESH = True
+
 run_boot_guards(ENVIRONMENT)

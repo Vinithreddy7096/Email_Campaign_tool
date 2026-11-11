@@ -1,0 +1,80 @@
+{% extends "console/base.html" %}
+{% load console %}
+{% block title %}Today{% endblock %}
+
+{% block content %}
+<div class="phead">
+  <div><h1>Today</h1><p class="sub">{{ since|date:"D j M Y" }}, 00:00 to now (UTC). Hand-offs come from the delivery pipeline; delivered, bounced and complained from the mail server's reports and provider webhooks.</p></div>
+</div>
+
+<div class="tiles">
+  <div class="tile"><span class="k">Queued today</span><span class="v">{{ tiles.scheduled|num }}</span><span class="d">jobs created</span></div>
+  <div class="tile"><span class="k">Accepted by MTA</span><span class="v">{{ tiles.accepted|num }}</span><span class="d">{% if tiles.submitted %}{{ tiles.accepted|pct:tiles.submitted }} of submissions{% else %}nothing submitted{% endif %}</span></div>
+  <div class="tile"><span class="k">Delivered</span><span class="v">{{ tiles.delivered|num }}</span><span class="d">{% if tiles.outcomes %}{{ tiles.delivered|pct:tiles.outcomes }} of outcomes{% else %}reported by the MTA{% endif %}</span></div>
+  <div class="tile"><span class="k">Deferred (4xx)</span><span class="v">{{ tiles.deferred|num }}</span><span class="d">Postfix retrying</span></div>
+  <div class="tile"><span class="k">Hard bounced</span><span class="v">{{ tiles.hard_bounced|num }}</span><span class="d">{% if tiles.outcomes %}{{ tiles.hard_bounced|pct:tiles.outcomes }} · {% endif %}suppressed</span></div>
+  <div class="tile{% if tiles.complaints %} alert{% endif %}"><span class="k">Complaints</span><span class="v">{{ tiles.complaints|num }}</span><span class="d">{% if tiles.outcomes %}{{ tiles.complaints|pct:tiles.outcomes }} · {% endif %}suppressed</span></div>
+  <div class="tile"><span class="k">Unsubscribed</span><span class="v">{{ tiles.unsubscribed|num }}</span><span class="d">links, one-click, providers</span></div>
+  <div class="tile"><span class="k">Suppressed at send</span><span class="v">{{ tiles.suppressed|num }}</span><span class="d">policy said no</span></div>
+</div>
+
+<div class="grid split">
+  <div class="panel">
+    <header><h2>Needs attention</h2><span class="muted small">{{ attention|length }} item{{ attention|length|pluralize }}</span></header>
+    <div class="alertlist">
+      {% for a in attention %}
+        <div class="alertrow {{ a.tone }}"><span class="stripe"></span>
+          <div><b>{{ a.title }}</b><p class="muted small">{{ a.detail }}{% if a.q %} <span class="q">{{ a.q }}</span>{% endif %}</p></div>
+          <a class="btn" href="{{ a.url }}">{{ a.cta }}</a>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="panel">
+    <header><h2>Queues</h2><span class="muted small">application side</span></header>
+    <div class="body">
+      <dl class="kv">
+        <dt>Open jobs</dt><dd><span class="num">{{ queues.depth|num }}</span></dd>
+        <dt>Oldest open job</dt><dd><span class="num">{% if queues.oldest %}{{ queues.oldest|timesince_fmt }}{% else %}—{% endif %}</span></dd>
+        <dt>Held by policy</dt><dd><span class="num">{{ queues.held|num }}</span> <span class="muted">(rechecked every few minutes)</span></dd>
+        <dt>Retrying (4xx)</dt><dd><span class="num">{{ queues.retrying|num }}</span></dd>
+        <dt>Held for review</dt><dd><span class="num">{{ queues.review|num }}</span> <span class="muted">(maybe sent)</span> <span class="q">Q-DEL-1</span></dd>
+        <dt>MTA queue</dt><dd class="muted">not connected — Postfix (§10.10)</dd>
+      </dl>
+    </div>
+  </div>
+</div>
+
+<div class="panel">
+  <header><h2>Campaigns in flight</h2><a href="{% url 'console:campaigns' %}?f=live" class="small">All campaigns</a></header>
+  {% if in_flight or transactional.today %}
+  <div class="tablewrap"><table>
+    <thead><tr><th>Campaign</th><th>Status</th><th>Domain</th><th class="r">Audience</th><th>Progress</th><th class="r">Accepted</th></tr></thead>
+    <tbody>
+      {% for row in in_flight %}
+      <tr class="link" data-href="{% url 'console:campaign' row.campaign.pk %}">
+        <td><a class="rowlink" href="{% url 'console:campaign' row.campaign.pk %}">{{ row.campaign.name }}</a></td>
+        <td>{% if row.campaign.status == "SCHEDULED" %}{% pill row.campaign.status %} <span class="small muted num">{{ row.campaign.scheduled_at|date:"j M H:i" }}</span>{% else %}{% pill row.campaign.status %}{% endif %}</td>
+        <td class="mono">{{ row.campaign.sender_identity.domain.domain }}</td>
+        <td class="r num">{{ row.audience|num }}</td>
+        <td style="min-width:140px"><div class="bar {% if row.campaign.status == 'PAUSED' %}warn{% endif %}"><span style="width:{{ row.done|bar_width:row.audience }}"></span></div></td>
+        <td class="r num">{{ row.accepted|num }}</td>
+      </tr>
+      {% endfor %}
+      {% if transactional.today %}
+      <tr>
+        <td>Transactional API</td>
+        <td><span class="pill ok">Running</span></td>
+        <td class="muted">per sender</td>
+        <td class="r num">-</td>
+        <td class="muted small">continuous · {{ transactional.held|num }} in progress</td>
+        <td class="r num">{{ transactional.accepted|num }}</td>
+      </tr>
+      {% endif %}
+    </tbody>
+  </table></div>
+  {% else %}
+    <p class="empty">No campaign is scheduled or sending, and no API messages today.</p>
+  {% endif %}
+</div>
+{% endblock %}

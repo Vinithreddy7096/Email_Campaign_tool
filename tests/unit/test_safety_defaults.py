@@ -32,10 +32,10 @@ def test_retry_backoff_matches_the_documented_policy():
     assert len(settings.RETRY_BACKOFF_SECONDS) == settings.MAX_DELIVERY_ATTEMPTS
 
 
-def test_templating_app_is_not_named_templates():
+def test_templates_app_is_not_named_templates():
     """§3 naming trap: an app called `templates` collides with Django template
-    discovery."""
-    assert "templating" in settings.INSTALLED_APPS
+    discovery. BUILD.md §10.5 names it `email_templates`."""
+    assert "email_templates" in settings.INSTALLED_APPS
     assert "templates" not in settings.INSTALLED_APPS
 
 

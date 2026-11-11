@@ -1,0 +1,12 @@
+# Redis: rate-limit / warm-up counters and the Django cache.
+# The app's REDIS_URL becomes redis://:<password>@<host>:6379/0
+redis_bind: "127.0.0.1 {{ ansible_default_ipv4.address | default('') }}"
+redis_port: 6379
+redis_password: "{{ vault_redis_password }}"
+redis_maxmemory: 512mb
+# noeviction: a full Redis refuses writes instead of silently dropping
+# rate-limit counters (the policy then holds mail — fail closed — and the
+# RedisDown/memory alerts fire). Every key the app writes has a TTL anyway.
+redis_maxmemory_policy: noeviction
+# Recommended by Redis for background saves; not settable inside containers.
+redis_sysctl: true

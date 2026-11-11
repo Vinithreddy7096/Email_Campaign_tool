@@ -1,0 +1,25 @@
+{% extends "console/base.html" %}
+{% block title %}New template{% endblock %}
+
+{% block content %}
+<div class="phead">
+  <div>
+    <p class="crumb"><a href="{% url 'console:templates' %}">Templates</a> / New</p>
+    <h1>New template</h1>
+    <p class="sub">Creates the template and its first draft. Nothing can be sent with it until a version is approved.</p>
+  </div>
+</div>
+<div class="grid split">
+  <div class="panel">
+    <header><h2>Template and first draft</h2></header>
+    <form method="post" class="body">{% csrf_token %}
+      {% include "console/_form_fields.html" %}
+      <div class="actions"><button class="btn primary" type="submit">Create draft v1</button><a class="btn" href="{% url 'console:templates' %}">Cancel</a></div>
+    </form>
+  </div>
+  <div class="stack">
+    <div class="note">Use <code>{% templatetag openvariable %} first_name {% templatetag closevariable %}</code>-style variables and declare each one under Variables. A variable that may be missing needs <code>"required": false</code>.</div>
+    <div class="note warn">Marketing templates must link <code>{% templatetag openvariable %} unsubscribe_url {% templatetag closevariable %}</code> in the HTML and include it in the text part, or preflight fails.</div>
+  </div>
+</div>
+{% endblock %}

@@ -14,7 +14,7 @@ description = "Turnkey high-volume permission-based email infrastructure"
 requires-python = ">=3.11"
 
 dependencies = [
-    "Django>=5.0,<5.2",
+    "Django>=5.1,<5.2",        # CheckConstraint(condition=…) is 5.1+
     "djangorestframework>=3.15",
     "django-environ>=0.11",
     "psycopg[binary]>=3.1",
@@ -26,6 +26,7 @@ dependencies = [
     "boto3>=1.34",             # S3 / MinIO
     "django-htmx>=1.17",
     "gunicorn>=21.2",
+    "whitenoise>=6.6",         # serves /static/ (console + admin CSS)
     "structlog>=24.1",
     "python-json-logger>=2.0",
     "django-prometheus>=2.3",
@@ -65,12 +66,13 @@ ignore = [
 # infer these. Without it, project imports get sorted in with third-party ones.
 known-first-party = [
     "config", "common", "accounts", "domains", "contacts", "consent",
-    "suppression", "templating", "campaigns", "delivery", "events",
-    "reporting", "audit", "api", "ui", "workers", "tests",
+    "suppression", "email_templates", "campaigns", "delivery", "events",
+    "audit", "api", "console", "ui", "workers", "tests",
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S105", "S106"]  # hardcoded test credentials are fine in tests
+"email_templates/tests/**" = ["S105", "S106"]
 
 # ─── mypy ────────────────────────────────────────────────────────────────
 [tool.mypy]
@@ -93,7 +95,7 @@ django_settings_module = "config.settings.local"
 DJANGO_SETTINGS_MODULE = "config.settings.local"
 python_files = ["test_*.py"]
 pythonpath = [".", "app"]
-testpaths = ["tests"]
+testpaths = ["tests", "email_templates/tests"]
 addopts = "--strict-markers"
 markers = [
     "integration: requires postgres/rabbitmq/redis to be running",
@@ -101,5 +103,5 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["app", "workers"]
+source = ["app", "workers", "email_templates"]
 omit = ["*/migrations/*", "*/tests/*", "*/config/settings/*"]

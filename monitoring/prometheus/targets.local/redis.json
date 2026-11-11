@@ -1,0 +1,1 @@
+[{"targets": ["redis-exporter:9121"], "labels": {"env": "local"}}]

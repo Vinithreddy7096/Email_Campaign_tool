@@ -1,0 +1,9 @@
+{% for field in form %}
+  <label class="field" for="{{ field.id_for_label }}">
+    <span>{{ field.label }}</span>
+    {{ field }}
+    {% if field.help_text %}<span class="hint">{{ field.help_text }}</span>{% endif %}
+    {% for e in field.errors %}<span class="err">{{ e }}</span>{% endfor %}
+  </label>
+{% endfor %}
+{% for e in form.non_field_errors %}<div class="note bad">{{ e }}</div>{% endfor %}

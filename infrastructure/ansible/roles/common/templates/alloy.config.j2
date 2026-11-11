@@ -1,0 +1,31 @@
+// {{ ansible_managed | default("Managed by Ansible (roles/common)") }}
+// Ship this host's journal to Loki. Labels: host, unit, priority.
+
+loki.relabel "journal" {
+  forward_to = []
+  rule {
+    source_labels = ["__journal__systemd_unit"]
+    target_label  = "unit"
+  }
+  rule {
+    source_labels = ["__journal_priority_keyword"]
+    target_label  = "level"
+  }
+  rule {
+    source_labels = ["__journal_syslog_identifier"]
+    target_label  = "identifier"
+  }
+}
+
+loki.source.journal "host" {
+  forward_to    = [loki.write.default.receiver]
+  relabel_rules = loki.relabel.journal.rules
+  max_age       = "12h"
+  labels        = {host = "{{ inventory_hostname }}", env = "{{ env_name | default('production') }}"}
+}
+
+loki.write "default" {
+  endpoint {
+    url = "{{ loki_push_url }}"
+  }
+}

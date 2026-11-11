@@ -1,0 +1,15 @@
+{% extends "console/public.html" %}
+{% block title %}Sign in · Email Platform{% endblock %}
+
+{% block card %}
+  <span class="from">Email Platform · operations console</span>
+  <h1>Sign in</h1>
+  {% if form.errors %}<div class="note bad">That email and password didn't match.</div>{% endif %}
+  <form method="post" class="stack" style="gap:12px">{% csrf_token %}
+    <input type="hidden" name="next" value="{{ next }}">
+    <label class="field" for="id_username"><span>Email</span><input id="id_username" name="username" type="email" autocomplete="username" required autofocus value="{{ form.username.value|default:'' }}"></label>
+    <label class="field" for="id_password"><span>Password</span><input id="id_password" name="password" type="password" autocomplete="current-password" required></label>
+    <button class="btn primary" type="submit">Sign in</button>
+  </form>
+  <p class="small muted">Approvers and administrators are asked for a two-factor code next.</p>
+{% endblock %}

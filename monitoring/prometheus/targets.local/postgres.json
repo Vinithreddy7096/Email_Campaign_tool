@@ -1,0 +1,1 @@
+[{"targets": ["postgres-exporter:9187"], "labels": {"env": "local"}}]

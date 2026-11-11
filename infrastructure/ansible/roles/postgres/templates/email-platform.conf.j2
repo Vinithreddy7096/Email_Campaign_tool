@@ -1,0 +1,29 @@
+# {{ ansible_managed | default("Managed by Ansible (roles/postgres)") }}
+# Included from postgresql.conf via include_dir = 'conf.d'.
+
+listen_addresses = '{{ postgres_listen_addresses }}'
+port = {{ postgres_port }}
+max_connections = {{ postgres_max_connections }}
+password_encryption = scram-sha-256
+ssl = on
+
+shared_buffers = {{ postgres_shared_buffers }}
+effective_cache_size = {{ postgres_effective_cache_size }}
+work_mem = {{ postgres_work_mem }}
+maintenance_work_mem = {{ postgres_maintenance_work_mem }}
+
+# ─── WAL archiving for point-in-time recovery (pgBackRest) ───────────────
+wal_level = replica
+archive_mode = on
+archive_command = 'pgbackrest --stanza={{ pgbackrest_stanza }} archive-push %p'
+archive_timeout = {{ postgres_archive_timeout }}
+max_wal_senders = 3
+wal_compression = on
+
+# ─── Logging ─────────────────────────────────────────────────────────────
+log_min_duration_statement = 1000
+log_checkpoints = on
+log_connections = off
+log_lock_waits = on
+log_temp_files = 0
+log_line_prefix = '%m [%p] %q%u@%d '

@@ -1,0 +1,194 @@
+#!/usr/bin/env python3
+"""Forward Postfix delivery-status log lines to the app (BUILD.md §10.8.1).
+
+Runs as a systemd service on each MTA host (mta/systemd/ship-postfix-log.service).
+Follows the journal's mail facility, keeps only delivery-status lines
+(``... to=<...>, ... status=sent|deferred|bounced|expired``), and POSTs them in
+signed batches to /api/v1/events/postfix-log. Python 3 standard library only.
+
+Never loses a line: the journal cursor is saved only after the app has
+accepted the batch, and a restart resumes from it. The app ignores lines it
+has already recorded, so resending after a crash is harmless.
+
+Configuration as for forward-bounce (/etc/email-platform/mta-intake.env), plus:
+  SHIP_STATE_DIR   where the cursor is kept (default /var/lib/ship-postfix-log)
+  SHIP_SINCE       first start only: how far back to read (default "-1h")
+"""
+
+from __future__ import annotations
+
+import hashlib
+import hmac
+import json
+import os
+import select
+import ssl
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+from datetime import datetime, timezone
+
+CONFIG_FILE = "/etc/email-platform/mta-intake.env"
+BATCH_LINES = 500
+BATCH_SECONDS = 5.0
+MAX_BACKOFF = 300
+CURSOR_SAVE_SECONDS = 5.0
+
+
+def load_config(path: str = CONFIG_FILE) -> dict[str, str]:
+    config: dict[str, str] = {}
+    try:
+        with open(path, encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, _, value = line.partition("=")
+                    config[key.strip()] = value.strip().strip('"').strip("'")
+    except FileNotFoundError:
+        pass
+    for key in (
+        "INTAKE_URL",
+        "MTA_INGEST_SECRET",
+        "INTAKE_CA_FILE",
+        "SHIP_STATE_DIR",
+        "SHIP_SINCE",
+    ):
+        if os.environ.get(key):
+            config[key] = os.environ[key]
+    return config
+
+
+def sign(secret: str, body: bytes, timestamp: str | None = None) -> dict[str, str]:
+    timestamp = timestamp or str(int(time.time()))
+    signature = hmac.new(
+        secret.encode(), timestamp.encode() + b"." + body, hashlib.sha256
+    ).hexdigest()
+    return {"X-Webhook-Timestamp": timestamp, "X-Webhook-Signature": signature}
+
+
+def post_lines(config: dict[str, str], lines: list[str], timeout: float = 30) -> int:
+    url = config["INTAKE_URL"].rstrip("/") + "/api/v1/events/postfix-log"
+    if not url.startswith(("https://", "http://")):
+        raise ValueError(f"INTAKE_URL must be http(s): {url}")
+    body = json.dumps({"lines": lines}).encode()
+    request = urllib.request.Request(  # noqa: S310 — scheme checked above
+        url,
+        data=body,
+        method="POST",
+        headers={"Content-Type": "application/json", **sign(config["MTA_INGEST_SECRET"], body)},
+    )
+    context = ssl.create_default_context(cafile=config.get("INTAKE_CA_FILE") or None)
+    try:
+        with urllib.request.urlopen(request, timeout=timeout, context=context) as response:  # noqa: S310
+            return int(response.status)
+    except urllib.error.HTTPError as exc:
+        return int(exc.code)
+
+
+def is_delivery_status(message: str) -> bool:
+    return " to=<" in message and " status=" in message
+
+
+def to_line(entry: dict[str, str]) -> str:
+    """A journal entry as the syslog-style line the app parses."""
+    micros = int(entry.get("__REALTIME_TIMESTAMP", "0"))
+    # timezone.utc, not datetime.UTC: MTA hosts may run Python 3.10.
+    stamp = datetime.fromtimestamp(micros / 1_000_000, tz=timezone.utc).isoformat()  # noqa: UP017
+    ident = entry.get("SYSLOG_IDENTIFIER", "postfix")
+    pid = entry.get("SYSLOG_PID") or entry.get("_PID") or "0"
+    host = entry.get("_HOSTNAME", "mta")
+    return f"{stamp} {host} {ident}[{pid}]: {entry.get('MESSAGE', '')}"
+
+
+class Cursor:
+    def __init__(self, directory: str) -> None:
+        os.makedirs(directory, exist_ok=True)
+        self.path = os.path.join(directory, "cursor")
+
+    def load(self) -> str | None:
+        try:
+            with open(self.path, encoding="utf-8") as handle:
+                return handle.read().strip() or None
+        except FileNotFoundError:
+            return None
+
+    def save(self, cursor: str) -> None:
+        tmp = self.path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as handle:
+            handle.write(cursor)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, self.path)
+
+
+def journal(cursor: str | None, since: str) -> subprocess.Popen[str]:
+    args = ["journalctl", "--follow", "--output=json", "--no-pager", "SYSLOG_FACILITY=2"]
+    args += [f"--after-cursor={cursor}"] if cursor else [f"--since={since}"]
+    return subprocess.Popen(args, stdout=subprocess.PIPE, text=True, bufsize=1)  # noqa: S603
+
+
+def deliver(config: dict[str, str], lines: list[str]) -> None:
+    """Block until the app accepts the batch (exponential back-off)."""
+    delay = 1.0
+    while True:
+        try:
+            status = post_lines(config, lines)
+        except (OSError, ValueError, urllib.error.URLError) as exc:
+            status, reason = 0, str(exc)
+        else:
+            reason = f"HTTP {status}"
+        if 200 <= status < 300:
+            return
+        if status in (400, 413):
+            print(
+                f"ship-postfix-log: batch refused ({reason}); skipped", file=sys.stderr, flush=True
+            )
+            return
+        print(f"ship-postfix-log: {reason}; retrying in {delay:.0f}s", file=sys.stderr, flush=True)
+        time.sleep(delay)
+        delay = min(delay * 2, MAX_BACKOFF)
+
+
+def main() -> int:
+    config = load_config()
+    if not config.get("INTAKE_URL") or not config.get("MTA_INGEST_SECRET"):
+        print("ship-postfix-log: INTAKE_URL / MTA_INGEST_SECRET not configured", file=sys.stderr)
+        return 78  # EX_CONFIG: systemd should not restart-loop on this
+    state = Cursor(config.get("SHIP_STATE_DIR", "/var/lib/ship-postfix-log"))
+    proc = journal(state.load(), config.get("SHIP_SINCE", "-1h"))
+    assert proc.stdout is not None
+    batch: list[str] = []
+    last_cursor: str | None = None
+    started = saved_at = 0.0
+    while True:
+        ready, _, _ = select.select([proc.stdout], [], [], 1.0)
+        if ready:
+            raw = proc.stdout.readline()
+            if not raw:
+                print("ship-postfix-log: journalctl exited", file=sys.stderr)
+                return 1  # systemd restarts us; the cursor makes that safe
+            try:
+                entry = json.loads(raw)
+            except ValueError:
+                continue
+            last_cursor = entry.get("__CURSOR", last_cursor)
+            message = entry.get("MESSAGE", "")
+            if isinstance(message, str) and is_delivery_status(message):
+                if not batch:
+                    started = time.monotonic()
+                batch.append(to_line(entry))
+        due = batch and (len(batch) >= BATCH_LINES or time.monotonic() - started >= BATCH_SECONDS)
+        if due:
+            deliver(config, batch)
+            batch = []
+        # Only with nothing pending: every line up to the cursor is delivered or
+        # irrelevant. Throttled, so a busy log is not fsync'd line by line.
+        if not batch and last_cursor and time.monotonic() - saved_at >= CURSOR_SAVE_SECONDS:
+            state.save(last_cursor)
+            last_cursor, saved_at = None, time.monotonic()
+
+
+if __name__ == "__main__":
+    sys.exit(main())

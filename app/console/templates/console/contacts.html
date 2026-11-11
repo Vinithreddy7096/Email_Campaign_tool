@@ -1,0 +1,70 @@
+{% extends "console/base.html" %}
+{% load console %}
+{% block title %}Contacts and consent{% endblock %}
+
+{% block content %}
+<div class="phead">
+  <div><h1>Contacts and consent</h1><p class="sub">Every marketing recipient needs a recorded consent: source, timestamp and method. A withdrawal anywhere wins.</p></div>
+  <div class="actions">{% if perms.contacts.add_contactimport %}<a class="btn primary" href="{% url 'console:contact_import_new' %}">Import contacts</a>{% else %}<button class="btn primary" disabled title="Needs the Campaign Manager role">Import contacts</button>{% endif %}</div>
+</div>
+<div class="tiles">
+  <div class="tile"><span class="k">Contacts</span><span class="v">{{ totals.contacts|num }}</span><span class="d">live records</span></div>
+  <div class="tile"><span class="k">Lists</span><span class="v">{{ totals.lists|num }}</span></div>
+  <div class="tile"><span class="k">Erased (GDPR)</span><span class="v">{{ totals.erased|num }}</span><span class="d">hash kept for suppression</span></div>
+</div>
+<div class="panel">
+  <header><h2>Lists</h2><span class="muted small">consent counted with the same rule campaign preflight uses</span></header>
+  {% if lists %}
+  <div class="tablewrap"><table>
+    <thead><tr><th>Name</th><th>Stream</th><th class="r">Members</th><th class="r">With consent</th><th>Status</th><th>Created</th><th></th></tr></thead>
+    <tbody>{% for row in lists %}
+      <tr>
+        <td>{{ row.list.name }}{% if row.list.description %}<div class="small muted">{{ row.list.description }}</div>{% endif %}</td>
+        <td>{{ row.list.get_stream_display }}</td>
+        <td class="r num">{{ row.list.members|num }}</td>
+        <td class="r num">{% if row.consented is None %}<span class="muted">{% if row.list.stream == "MARKETING" %}too large to count here{% else %}n/a (transactional){% endif %}</span>{% else %}{{ row.consented|num }}{% if row.consented < row.list.members %} <span class="pill warn">{{ row.consented|pct:row.list.members }}</span>{% endif %}{% endif %}</td>
+        <td>{% if row.list.archived_at %}<span class="pill">Archived</span>{% else %}<span class="pill ok">Active</span>{% endif %}</td>
+        <td class="num small">{{ row.list.created_at|date:"j M Y" }}</td>
+        <td class="small">{% if not row.list.archived_at %}{% if perms.contacts.add_contactimport %}<a href="{% url 'console:contact_import_new' %}?list={{ row.list.pk }}">Import</a>{% endif %}{% if perms.contacts.add_segment %} · <a href="{% url 'console:segment_new' %}?list={{ row.list.pk }}">New segment</a>{% endif %}{% endif %}</td>
+      </tr>{% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}<p class="empty">No lists yet.</p>{% endif %}
+</div>
+<div class="panel">
+  <header><h2>Segments</h2><span class="muted small">saved filters that narrow one list; consent and suppression still apply to whoever they select</span></header>
+  {% if segments %}
+  <div class="tablewrap"><table>
+    <thead><tr><th>Segment</th><th>List</th><th class="r">Members selected</th><th>Updated</th></tr></thead>
+    <tbody>{% for row in segments %}
+      <tr data-href="{% url 'console:segment' row.segment.pk %}">
+        <td><a href="{% url 'console:segment' row.segment.pk %}">{{ row.segment.name }}</a></td>
+        <td>{{ row.segment.contact_list.name }}</td>
+        <td class="r num">{% if row.members is None %}<span class="pill bad">invalid rules</span>{% else %}{{ row.members|num }}{% endif %}</td>
+        <td class="num small">{{ row.segment.updated_at|date:"j M Y H:i" }}</td>
+      </tr>{% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}<p class="empty">No segments yet. Create one from a list's row above.</p>{% endif %}
+</div>
+<div class="panel">
+  <header><h2>Recent imports</h2><span class="muted small">each one attested by a named person; applied whole or not at all</span></header>
+  {% if imports %}
+  <div class="tablewrap"><table>
+    <thead><tr><th>File</th><th>List</th><th>Status</th><th class="r">Rows</th><th class="r">Added</th><th class="r">Skipped</th><th>Attested by</th><th>When</th></tr></thead>
+    <tbody>{% for imp in imports %}
+      <tr data-href="{% url 'console:contact_import' imp.pk %}">
+        <td><a href="{% url 'console:contact_import' imp.pk %}">{{ imp.original_filename }}</a></td>
+        <td>{{ imp.contact_list.name }}</td>
+        <td>{% pill imp.status imp.get_status_display %}</td>
+        <td class="r num">{{ imp.total_rows|num }}</td>
+        <td class="r num">{{ imp.imported_count|num }}</td>
+        <td class="r num">{{ imp.skipped_invalid|add:imp.skipped_duplicate|add:imp.skipped_suppressed|add:imp.skipped_opted_out|num }}</td>
+        <td class="small">{{ imp.attested_by.email }}</td>
+        <td class="num small">{{ imp.created_at|date:"j M Y H:i" }}</td>
+      </tr>{% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}<p class="empty">No imports yet.</p>{% endif %}
+</div>
+{% endblock %}

@@ -9,7 +9,11 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
+  # ─── Code: lint, types, migrations, the full test suite ────────────────
   test:
     runs-on: ubuntu-latest
 
@@ -31,6 +35,13 @@ jobs:
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 5s --health-timeout 3s --health-retries 10
+
+      rabbitmq:
+        image: rabbitmq:3.13-management
+        ports: ["5672:5672"]
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 10s --health-timeout 10s --health-retries 10
 
     env:
       DJANGO_SETTINGS_MODULE: config.settings.local
@@ -55,11 +66,11 @@ jobs:
 
       - name: Lint
         run: |
-          ruff check .
-          ruff format --check .
+          ruff check . mta/bin/forward-bounce mta/bin/ship-postfix-log
+          ruff format --check . mta/bin/forward-bounce mta/bin/ship-postfix-log
 
       - name: Types
-        run: mypy app workers
+        run: mypy app workers tests scripts/render_mta.py
 
       - name: Django system check
         run: python app/manage.py check
@@ -72,7 +83,157 @@ jobs:
 
       - name: No secrets committed
         run: |
-          if git ls-files | grep -E '(^|/)\.env$|\.pem$|\.key$|opendkim/keys/'; then
+          if git ls-files | grep -E '(^|/)\.env$|\.pem$|\.key$|\.private$|opendkim/keys/|local-secrets/'; then
             echo "::error::A secret-shaped file is tracked in git."
             exit 1
           fi
+
+  # ─── The production image boots under production settings ──────────────
+  image:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env: {POSTGRES_USER: mailer, POSTGRES_PASSWORD: mailer, POSTGRES_DB: mailer}
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U mailer" --health-interval 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: |
+          docker build --target production --build-arg GIT_SHA=${{ github.sha }} -t email-platform:ci .
+          docker build -f deploy/backup/Dockerfile -t email-platform-backup:ci .
+
+      - name: Nothing secret or test-only in the image
+        run: |
+          docker run --rm --entrypoint sh email-platform:ci -c \
+            'test ! -e /srv/.env && test ! -d /srv/tests && test ! -d /srv/email_templates/tests && test -f /srv/app/staticfiles/staticfiles.json'
+
+      - name: Boots with production settings and answers probes
+        run: |
+          rand() { python3 -c "import secrets; print(secrets.token_hex(32))"; }
+          METRICS_TOKEN=$(rand)
+          {
+            echo "DJANGO_SETTINGS_MODULE=config.settings.production"
+            echo "SECRET_KEY=$(rand)$(rand)"
+            echo "ALLOWED_HOSTS=console.example.test"
+            echo "BASE_URL=https://console.example.test"
+            echo "MESSAGE_ID_DOMAIN=mail.example.test"
+            echo "DEFAULT_RETURN_PATH_DOMAIN=bounce.example.test"
+            echo "ABUSE_CONTACT_EMAIL=abuse@example.test"
+            echo "WEBHOOK_SIGNING_SECRET=$(rand)"
+            echo "MTA_INGEST_SECRET=$(rand)"
+            echo "METRICS_TOKEN=$METRICS_TOKEN"
+            echo "FIELD_ENCRYPTION_KEYS=$(python3 -c 'import base64,os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())')"
+            echo "MFA_ENFORCED=true"
+            echo "MOCK_MODE=false"
+            echo "GLOBAL_SEND_ENABLED=false"
+            # The app connects as an unprivileged role, as in production.
+            echo "DATABASE_URL=postgres://mailer_app:mailer_app@localhost:5432/mailer"
+            echo "REDIS_URL=redis://localhost:6379/0"
+            echo "RABBITMQ_URL=amqp://guest:guest@localhost:5672//"
+          } > prod.env
+          # Same flow as the production migrate service: owner migrates and
+          # grants; check --deploy (common.W010) then runs as the app role.
+          PGPASSWORD=mailer psql -h localhost -U mailer -d mailer -c "CREATE ROLE mailer_app LOGIN PASSWORD 'mailer_app'"
+          OWNER=postgres://mailer:mailer@localhost:5432/mailer
+          docker run --rm --network host --env-file prod.env -e DATABASE_URL=$OWNER email-platform:ci python manage.py migrate --noinput
+          docker run --rm --network host --env-file prod.env -e DATABASE_URL=$OWNER email-platform:ci python manage.py db_grants --apply --app-role mailer_app
+          docker run --rm --network host --env-file prod.env email-platform:ci python manage.py check --deploy --fail-level WARNING
+          # As the owner the same check must fail: proves W010 is really checked.
+          ! docker run --rm --network host --env-file prod.env -e DATABASE_URL=$OWNER email-platform:ci python manage.py check --deploy --fail-level WARNING
+          docker run -d --name web --network host --env-file prod.env --read-only --tmpfs /tmp email-platform:ci
+          for _ in $(seq 1 30); do curl -fsS -o /dev/null http://127.0.0.1:8000/health/live && break; sleep 1; done
+          code() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
+          test "$(code http://127.0.0.1:8000/health/live)" = 200
+          test "$(code http://127.0.0.1:8000/metrics)" = 404
+          curl -fsS -H "Authorization: Bearer $METRICS_TOKEN" http://127.0.0.1:8000/metrics | grep -q '^mailer_jobs'
+          test "$(code -H 'Host: console.example.test' http://127.0.0.1:8000/)" = 301
+          test "$(code -H 'Host: console.example.test' -H 'X-Forwarded-Proto: https' http://127.0.0.1:8000/login/)" = 200
+          test "$(code -H 'Host: evil.example' -H 'X-Forwarded-Proto: https' http://127.0.0.1:8000/login/)" = 400
+
+      - name: Server log on failure
+        if: failure()
+        run: docker logs web || true
+
+  # ─── MTA: postfix check, no open relay, DKIM signing, bounce pipe ──────
+  mta:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.11"}
+      - run: pip install Jinja2 PyYAML
+      - name: Render, boot and probe a test MTA
+        run: PYTHON=python sh mta/test/run.sh
+
+  # ─── Monitoring config is valid and the alert rules behave ─────────────
+  monitoring:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prometheus config and rule tests
+        run: |
+          docker run --rm --entrypoint sh -v "$PWD/monitoring:/m:ro" prom/prometheus:v2.54.1 -c '
+            mkdir -p /tmp/p/secrets && cp /m/prometheus/prometheus.yml /tmp/p/ &&
+            ln -s /m/prometheus/rules /tmp/p/rules && echo x > /tmp/p/secrets/metrics_token &&
+            sed -i "s#/etc/prometheus/#/tmp/p/#g" /tmp/p/prometheus.yml &&
+            promtool check config /tmp/p/prometheus.yml &&
+            cd /m/prometheus/tests && promtool test rules mailer.rules.test.yml'
+      - name: Alertmanager config
+        run: |
+          docker run --rm --entrypoint sh -v "$PWD/monitoring/alertmanager:/cfg:ro" prom/alertmanager:v0.27.0 -c '
+            mkdir -p /etc/alertmanager/secrets &&
+            for f in smtp_password slack_oncall_webhook slack_team_webhook; do echo https://example.invalid > /etc/alertmanager/secrets/$f; done &&
+            amtool check-config /cfg/alertmanager.yml'
+      - name: Dashboards are valid JSON
+        run: for f in monitoring/grafana/dashboards/*.json; do python3 -m json.tool "$f" > /dev/null || exit 1; done
+
+  # ─── Backups: dump a real database, restore it, verify it ──────────────
+  backup:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env: {POSTGRES_USER: mailer, POSTGRES_PASSWORD: mailer, POSTGRES_DB: mailer}
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U mailer" --health-interval 5s --health-retries 10
+    env:
+      DJANGO_SETTINGS_MODULE: config.settings.local
+      MOCK_MODE: "true"
+      SECRET_KEY: ci-only-key-not-used-for-anything-that-matters
+      DATABASE_URL: postgres://mailer:mailer@localhost:5432/mailer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.11", cache: pip}
+      - run: pip install ".[dev]"
+      - name: A schema to back up
+        run: python app/manage.py migrate --noinput
+      - name: Backup, then restore-check
+        run: |
+          docker build -f deploy/backup/Dockerfile -t email-platform-backup:ci .
+          mkdir -p backups && chmod 777 backups
+          B="docker run --rm --network host -v $PWD/backups:/backups -e BACKUP_DIR=/backups -e BACKUP_ENV=ci"
+          $B -e DATABASE_URL=postgres://mailer:mailer@localhost:5432/mailer email-platform-backup:ci backup
+          $B -e DATABASE_URL=postgres://mailer:mailer@localhost:5432/postgres email-platform-backup:ci restore-check
+
+  # ─── Ansible playbooks parse with both inventories ─────────────────────
+  ansible:
+    runs-on: ubuntu-latest
+    defaults:
+      run: {working-directory: infrastructure/ansible}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.11"}
+      - run: pip install "ansible-core==2.17.5"
+      - name: Syntax check
+        run: |
+          for inv in staging production; do
+            ansible-playbook -i inventories/$inv playbooks/mta.yml --syntax-check
+          done

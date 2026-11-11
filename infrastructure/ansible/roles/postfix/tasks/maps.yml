@@ -1,0 +1,31 @@
+# mta_maps comes from the app, so DNS, Postfix and OpenDKIM agree with the
+# sending domains configured there. Either:
+#   - a JSON file exported by `manage.py export_mta_maps` (mta_maps_file), or
+#   - run that command on the first app host.
+- name: Read the maps from a file
+  ansible.builtin.set_fact:
+    mta_maps: "{{ lookup('ansible.builtin.file', mta_maps_file) | from_json }}"
+  when: mta_maps_file is defined
+  run_once: true
+
+- name: Export the maps from the app
+  ansible.builtin.command: >-
+    docker compose -f {{ app_deploy_dir | default('/opt/email-platform') }}/deploy/docker-compose.prod.yml
+    run --rm -T web python manage.py export_mta_maps
+  delegate_to: "{{ groups['app'][0] }}"
+  run_once: true
+  changed_when: false
+  register: exported_maps
+  when: mta_maps_file is not defined
+
+- name: Use the exported maps
+  ansible.builtin.set_fact:
+    mta_maps: "{{ exported_maps.stdout | from_json }}"
+  when: mta_maps_file is not defined
+  run_once: true
+
+- name: The app must have at least one bounce domain
+  ansible.builtin.assert:
+    that: mta_maps.bounce_domains | length > 0
+    fail_msg: No bounce domain is configured in the app; bounces would have nowhere to go.
+  run_once: true

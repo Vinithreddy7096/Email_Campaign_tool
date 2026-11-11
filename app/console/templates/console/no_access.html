@@ -1,0 +1,9 @@
+{% extends "console/public.html" %}
+{% block title %}No access · Email Platform{% endblock %}
+
+{% block card %}
+  <span class="from">Email Platform · operations console</span>
+  <h1>You don't have a role yet</h1>
+  <p>Your account ({{ user.email }}) is signed in but holds no platform role, so the console has nothing to show you. Ask a system administrator to grant one.</p>
+  <form method="post" action="{% url 'console:logout' %}">{% csrf_token %}<button class="btn" type="submit">Sign out</button></form>
+{% endblock %}

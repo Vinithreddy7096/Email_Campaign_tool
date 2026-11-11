@@ -1,0 +1,45 @@
+{% extends "console/base.html" %}
+{% load console %}
+{% block title %}{{ v.template.name }} v{{ v.number }}{% endblock %}
+
+{% block content %}
+<div class="phead">
+  <div>
+    <p class="crumb"><a href="{% url 'console:templates' %}">Templates</a> / {{ v.template.name }}</p>
+    <h1>{{ v.template.name }} · v{{ v.number }}</h1>
+    <p class="sub">{{ v.template.get_category_display }} · draft by {{ v.created_by.email }}{% if v.number > 1 %} · copied from v{{ v.number|add:"-1" }}{% endif %}</p>
+  </div>
+  <div class="actions">{% pill v.status %}</div>
+</div>
+<ol class="steps" aria-label="Version status"><li class="now">Draft</li><li>Pending approval</li><li>Approved</li><li>Retired</li></ol>
+
+<div class="grid split">
+  <div class="panel">
+    <header><h2>Content</h2><span class="small muted">Editable while Draft; frozen once submitted</span></header>
+    <form method="post" class="body">{% csrf_token %}
+      {% include "console/_form_fields.html" %}
+      <p class="small muted">Allowed tags: {% for t in allowed_tags %}<code>{{ t }}</code> {% endfor %}. No includes, no <code>|safe</code>, nothing that reads the clock or the database. Marketing templates must link <code>{% templatetag openvariable %} unsubscribe_url {% templatetag closevariable %}</code> in both parts.</p>
+      <div class="actions">
+        <button class="btn primary" name="action" value="save" {% if not perms.email_templates.change_templateversion %}disabled title="Needs the Campaign Manager role"{% endif %}>Save draft</button>
+        <a class="btn" href="{% url 'console:template_review' v.pk %}">Preview</a>
+      </div>
+    </form>
+  </div>
+  <div class="stack">
+    <div class="panel">
+      <header><h2>Preflight</h2><span class="pill {% if fails %}bad{% elif warns %}warn{% else %}ok{% endif %}">{{ fails }} fail · {{ warns }} warn</span></header>
+      <div class="body flush">{% include "console/_findings.html" %}</div>
+    </div>
+    <div class="panel">
+      <header><h2>Submit</h2></header>
+      <form method="post" class="body">{% csrf_token %}
+        <p class="small">Submitting runs preflight again and freezes this version. Any FAIL blocks it. Save first — submit uses the saved content.</p>
+        <div class="actions">
+          <button class="btn primary" name="action" value="submit" {% if fails or not perms.email_templates.submit_templateversion %}disabled{% endif %}
+            {% if not perms.email_templates.submit_templateversion %}title="Needs the Campaign Manager role"{% elif fails %}title="Fix the FAIL findings first"{% endif %}>Submit for approval</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,160 @@
+{% extends "console/base.html" %}
+{% load console %}
+{% block title %}{{ c.name }}{% endblock %}
+
+{% block content %}
+<div class="phead">
+  <div>
+    <p class="crumb"><a href="{% url 'console:campaigns' %}">Campaigns</a> / {{ c.name }}</p>
+    <h1>{{ c.name }}</h1>
+    <p class="sub">{{ c.get_purpose_display }} · owner {{ c.owner.email }} · created {{ c.created_at|date:"j M Y" }}</p>
+  </div>
+  <div class="actions">{% pill c.status %}</div>
+</div>
+
+<ol class="steps" aria-label="Campaign workflow">
+  {% for s in steps %}<li class="{{ s.state }}">{{ s.label }}</li>{% endfor %}
+</ol>
+
+{% if c.review_note %}<div class="note {% if c.status == 'APPROVED' or c.status == 'SCHEDULED' or c.status == 'SENDING' or c.status == 'COMPLETED' %}ok{% else %}warn{% endif %}"><b>Review note from {{ c.reviewed_by.email }}:</b> {{ c.review_note }}</div>{% endif %}
+
+<div class="grid split">
+  <div class="stack">
+    <div class="panel">
+      <header><h2>Setup</h2>
+        <div class="actions">
+        {% if c.is_editable %}
+          {% if perms.campaigns.change_campaign %}<a class="btn" href="{% url 'console:campaign_edit' c.pk %}">Edit draft</a>{% endif %}
+          <form method="post">{% csrf_token %}<button class="btn primary" name="action" value="submit" {% if not perms.campaigns.submit_campaign %}disabled title="Needs the Campaign Manager role"{% endif %}>Run preflight and submit</button></form>
+        {% endif %}
+        </div>
+      </header>
+      <div class="body"><dl class="kv">
+        <dt>Sender identity</dt><dd>{{ c.sender_identity }}{% if c.sender_identity.reply_to %} · reply-to {{ c.sender_identity.reply_to }}{% endif %}</dd>
+        <dt>Sending domain</dt><dd class="mono">{{ c.sender_identity.domain.domain }} {% pill c.sender_identity.domain.status c.sender_identity.domain.get_status_display "domain" %}</dd>
+        <dt>Audience</dt><dd>List “{{ c.audience_list.name }}”{% if c.audience_segment %} · segment <a href="{% url 'console:segment' c.audience_segment.pk %}">“{{ c.audience_segment.name }}”</a>{% endif %}</dd>
+        <dt>Template</dt><dd><a href="{% url 'console:template_review' c.template_version.pk %}">{{ c.template_version.template.name }} <b>v{{ c.template_version.number }}</b></a> {% pill c.template_version.status %} <code>{{ c.template_version.checksum|truncatechars:13 }}</code></dd>
+        <dt>Purpose</dt><dd>{{ c.get_purpose_display }}{% if c.purpose == "MARKETING" %} (unsubscribe link required){% endif %}</dd>
+      </dl></div>
+    </div>
+
+    <div class="panel">
+      <header><h2>Campaign preflight</h2>
+        {% if findings %}<span class="pill {% if fails %}bad{% elif warns %}warn{% else %}ok{% endif %}">{{ fails }} fail · {{ warns }} warn</span>{% endif %}
+      </header>
+      <div class="body flush">
+        {% for f in findings %}
+          <div class="finding"><span class="lvl {{ f.level }}">{{ f.level }}</span><div><code>{{ f.code }}</code><p class="muted small">{{ f.message }}</p></div></div>
+        {% empty %}
+          {% if c.preflight_report %}
+            <div class="finding"><span class="lvl PASS">PASS</span><div>Sender alignment, template preflight, consent and sample renders all pass.</div></div>
+          {% else %}
+            <p class="empty">Preflight has not run yet. It runs when the draft is submitted, and again at approval.</p>
+          {% endif %}
+        {% endfor %}
+      </div>
+    </div>
+
+    {% if funnel %}
+    <div class="panel">
+      <header><h2>Audience breakdown</h2><span class="muted small">{% if snapshot %}frozen at approval{% else %}at last preflight{% endif %}</span></header>
+      <div class="body"><div class="funnel">
+        {% for r in funnel %}
+          <div class="frow"><span>{{ r.label }}</span><div class="bar {{ r.tone }}"><span style="width:{{ r.n|bar_width:r.of }}"></span></div><span class="num r">{{ r.n|num }}</span></div>
+        {% endfor %}
+      </div></div>
+    </div>
+    {% endif %}
+
+    {% if samples %}
+    <div class="panel">
+      <header><h2>Sample renders</h2><span class="muted small">real recipients' data</span></header>
+      <div class="tablewrap"><table class="small">
+        <thead><tr><th>Contact</th><th>Subject</th><th>Content hash</th></tr></thead>
+        <tbody>{% for s in samples %}<tr><td class="mono">{{ s.contact_id|truncatechars:13 }}</td><td>{% if s.error %}<span class="pill bad">{{ s.error }}</span>{% else %}{{ s.subject }}{% endif %}</td><td class="mono muted">{{ s.content_hash|default:""|truncatechars:15 }}</td></tr>{% endfor %}</tbody>
+      </table></div>
+    </div>
+    {% endif %}
+
+    {% if jobs.total %}
+    <div class="panel">
+      <header><h2>Delivery</h2><span class="muted small">{{ jobs.accepted|num }} of {{ jobs.total|num }} accepted by the MTA</span></header>
+      <div class="body">
+        <div class="bar ok"><span style="width:{{ jobs.accepted|bar_width:jobs.total }}"></span></div>
+        <div class="actions">{% for state, n in job_states %}{% pill state %}<span class="num small">{{ n|num }}</span>{% endfor %}</div>
+        {% with s=c.delivery_stats %}{% if s %}
+        <dl class="kv small"><dt>Delivered</dt><dd class="num">{{ s.delivered|num }}</dd><dt>Hard bounces</dt><dd class="num">{{ s.hard_bounces|num }}</dd><dt>Soft bounces</dt><dd class="num">{{ s.soft_bounces|num }}</dd><dt>Complaints</dt><dd class="num">{{ s.complaints|num }}</dd><dt>Unsubscribes</dt><dd class="num">{{ s.unsubscribes|num }}</dd></dl>
+        <p class="small muted">Recipient-side outcomes, refreshed every few minutes ({{ s.updated_at|date:"H:i" }} UTC).</p>
+        {% endif %}{% endwith %}
+        {% if jobs.review %}<div class="note bad">{{ jobs.review }} message(s) need review — <a href="{% url 'console:events' %}">resolve them</a>. The campaign stays “sending” until they are.</div>{% endif %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="stack">
+    <div class="panel">
+      <header><h2>Approval</h2><span class="muted small">Approver / Compliance only</span></header>
+      <div class="body">
+        {% if snapshot %}
+          <p class="small">Approved by <b>{{ snapshot.approved_by.email }}</b> on {{ snapshot.created_at|date:"j M Y H:i" }}. Frozen: template v{{ c.template_version.number }} <code>{{ snapshot.template_checksum|truncatechars:13 }}</code>, sender values, and {{ snapshot.recipient_count|num }} recipients with the consent records they rely on.</p>
+        {% elif c.status == "READY_FOR_REVIEW" %}
+          <p class="small">Approving re-runs preflight and freezes an immutable snapshot: the template version and its checksum, sender values, every recipient with the consent record they rely on, and this preflight report.</p>
+          <form method="post" class="stack" style="gap:10px">{% csrf_token %}
+            <label class="field" for="camp-note"><span>Note (required to reject or request changes)</span><textarea id="camp-note" name="note" rows="3" placeholder="e.g. Footer needs the postal address"></textarea></label>
+            <div class="actions">
+              {% if perms.campaigns.approve_campaign %}
+                <button class="btn primary" name="action" value="approve" {% if fails %}disabled{% endif %}>Approve</button>
+                <button class="btn" name="action" value="request_changes">Request changes</button>
+                <button class="btn danger" name="action" value="reject">Reject</button>
+              {% else %}
+                <button class="btn primary" disabled title="Needs the Approver role">Approve</button>
+                <span class="small muted">Needs the Approver role</span>
+              {% endif %}
+            </div>
+          </form>
+        {% else %}
+          <p class="small muted">Approval opens once preflight passes and the draft is submitted.</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="panel">
+      <header><h2>Schedule</h2></header>
+      <div class="body">
+        {% if c.status == "APPROVED" %}
+          <form method="post" class="stack" style="gap:10px">{% csrf_token %}
+            <div class="formrow"><label class="field" for="sched"><span>Start (UTC) — empty means now</span><input id="sched" name="scheduled_at" type="datetime-local" value="{{ c.scheduled_at|date:'Y-m-d\TH:i' }}"></label></div>
+            <div class="note">Scheduling is refused if the domain is not active, DNS is not verified, the template is no longer approved, or nobody in the snapshot still has consent.</div>
+            <div class="note warn">Warm-up and rate limits are not configured, so nothing caps this send. <span class="q">Q-POL-1</span></div>
+            <div class="actions"><button class="btn primary" name="action" value="schedule" {% if not perms.campaigns.schedule_campaign %}disabled title="Needs the Campaign Manager role"{% endif %}>Schedule</button></div>
+          </form>
+        {% elif c.scheduled_at and c.status != "CANCELED" %}
+          <dl class="kv"><dt>Start</dt><dd class="num">{{ c.scheduled_at|date:"j M Y H:i" }} UTC</dd>{% if c.completed_at %}<dt>Completed</dt><dd class="num">{{ c.completed_at|date:"j M Y H:i" }}</dd>{% endif %}</dl>
+        {% else %}
+          <div class="actions"><button class="btn primary" disabled>Schedule</button><span class="small muted">Needs approval</span></div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="panel">
+      <header><h2>While sending</h2></header>
+      <form method="post" class="body">{% csrf_token %}
+        {% if c.status == "SCHEDULED" or c.status == "SENDING" or c.status == "PAUSED" or c.status == "APPROVED" %}
+          <label class="field" for="ctl-note"><span>Reason (kept in the audit log)</span><input id="ctl-note" name="note" type="text" placeholder="e.g. Complaint spike"></label>
+        {% endif %}
+        <div class="actions">
+          {% if perms.campaigns.pause_campaign %}
+            {% if c.status == "PAUSED" %}<button class="btn primary" name="action" value="resume">Resume</button>
+            {% else %}<button class="btn" name="action" value="pause" {% if c.status != "SCHEDULED" and c.status != "SENDING" %}disabled{% endif %}>Pause</button>{% endif %}
+            <button class="btn danger" name="action" value="cancel" {% if c.status != "APPROVED" and c.status != "SCHEDULED" and c.status != "SENDING" and c.status != "PAUSED" %}disabled{% endif %}>Cancel</button>
+          {% else %}
+            <button class="btn" disabled title="Needs the Campaign Manager or Approver role">Pause</button><button class="btn danger" disabled>Cancel</button>
+          {% endif %}
+        </div>
+        <p class="small muted">Pause stops future dispatch. Messages the mail server already accepted still complete. Cancel is permanent.</p>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

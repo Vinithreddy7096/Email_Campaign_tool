@@ -1,0 +1,10 @@
+# {{ ansible_managed | default("Managed by Ansible (roles/postgres)") }}
+# TYPE   DATABASE        USER                         ADDRESS          METHOD
+local    all             postgres                                      peer
+local    all             all                                           peer
+host     all             all                          127.0.0.1/32     scram-sha-256
+host     all             all                          ::1/128          scram-sha-256
+{% for net in postgres_app_networks %}
+hostssl  {{ postgres_db }}  {{ postgres_app_user }},{{ postgres_backup_user }}  {{ net }}  scram-sha-256
+{% endfor %}
+# Everything else is refused.

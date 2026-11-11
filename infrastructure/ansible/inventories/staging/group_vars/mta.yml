@@ -1,0 +1,21 @@
+# Staging MTA. Sink mode is mandatory here (the postfix role refuses otherwise):
+# nothing leaves for a real recipient (§6.2).
+postfix_hostname: mta1.staging.example.com
+postfix_mydomain: staging.example.com
+postfix_app_networks: [10.20.0.0/24]
+postfix_sink_mode: true
+postfix_sink_transport: "discard:staging sink"
+mta_intake_url: https://app1.staging.example.com
+# Staging DKIM keys need not be published, so skip the DNS comparison.
+opendkim_testkey_dns: false
+
+postfix_streams:
+  - name: marketing
+    bind_address: ""
+    helo_name: mta1.staging.example.com
+  - name: transactional
+    bind_address: ""
+    helo_name: mta1.staging.example.com
+
+# Secrets (vault_mta_ingest_secret, vault_dkim_private_keys) belong in
+# group_vars/mta/vault.yml, encrypted with `ansible-vault encrypt`.

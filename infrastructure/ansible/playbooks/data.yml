@@ -1,0 +1,23 @@
+# Data hosts: Postgres (with point-in-time recovery), Redis, RabbitMQ.
+#
+#   ansible-playbook -i inventories/production playbooks/data.yml --ask-vault-pass --check --diff
+#   ansible-playbook -i inventories/production playbooks/data.yml --ask-vault-pass
+- name: Every host
+  hosts: db:cache:mq
+  become: true
+  roles: [common]
+
+- name: Postgres
+  hosts: db
+  become: true
+  roles: [postgres]
+
+- name: Redis
+  hosts: cache
+  become: true
+  roles: [redis]
+
+- name: RabbitMQ
+  hosts: mq
+  become: true
+  roles: [rabbitmq]

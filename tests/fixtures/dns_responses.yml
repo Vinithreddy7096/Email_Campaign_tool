@@ -1,0 +1,35 @@
+# Recorded DNS answers for a correctly configured sending domain:
+#   From domain mail.example.com, return path bounce.example.com, DKIM
+#   selector s1, one sending IP 203.0.113.10 (PTR mta1.example.com).
+# Tests copy this zone and break one record each. Keys are real but
+# throwaway public keys; no private key exists anywhere.
+# Names missing here resolve to NXDOMAIN; the value SERVFAIL raises a lookup error.
+bounce.example.com:
+  TXT:
+  - v=spf1 ip4:203.0.113.0/28 include:_spf.example.com -all
+  MX:
+  - mx.example.com
+_spf.example.com:
+  TXT:
+  - v=spf1 ip4:198.51.100.0/24 -all
+s1._domainkey.mail.example.com:
+  TXT:
+  - v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAk4GN8wETz8DmJBeJ1m7aItZj76UiMtKGbhbJ74aIyxSqU6fkMjv9nPvyKJOOV0RyWyib4OKIrMDpo8v+mYWNB6iJ3qFUJ5QVg6nGSvcUBexT5ZrLetjlc65ubBUdribKbuk+ewoDPaFJrypXR0sZIBAj+p8QSXLLB4fTmYXw8/Z8HC4tGLT5WFh+kQgEbPX+18NrklgXUuKjU8o0zam0IF3cIWU8QZobSu74fBlsw2DHjAZmx3cPGU8FM0+UfO75ydujMxVXo7kQ5J1LXC9hAcNxP+j7Brc3JctNhlXPRxMIF+kOzG7uAO8ewGj2pzUNIVFUENPFQN6LTqcUin4omQIDAQAB
+weak._domainkey.mail.example.com:
+  TXT:
+  - v=DKIM1; k=rsa; p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCur1YBn6ah6E/hQbXZg5nj2xxiJGaYgZRr7LQj5xACY0U5P6ZQm1IMF9OJYsf+jgs+3GwNTPyp3vkAntouHYKFndnoKQ2BqJq0ZKKiJaidgwCDyj4HxpNElmx2ktC8EjK0tTvJSBnPt6lquZZ7oVzaRImotWoiC7rJjh3aJZAWqQIDAQAB
+ed._domainkey.mail.example.com:
+  TXT:
+  - v=DKIM1; k=ed25519; p=aNKTHdI3eK43aj6iIgilDzYWosdZMHdGVJoVKT6Kcso=
+_dmarc.example.com:
+  TXT:
+  - v=DMARC1; p=reject; rua=mailto:dmarc-reports@example.com
+10.113.0.203.in-addr.arpa:
+  PTR:
+  - mta1.example.com
+mta1.example.com:
+  A:
+  - 203.0.113.10
+click.example.com:
+  CNAME:
+  - tracking.example.net

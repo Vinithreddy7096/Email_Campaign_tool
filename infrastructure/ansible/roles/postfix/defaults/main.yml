@@ -1,0 +1,60 @@
+# Postfix role defaults. Override per environment in
+# inventories/<env>/group_vars/mta.yml. These are also what CI renders and
+# checks (scripts/render_mta.py), so keep them valid.
+
+# Where the templates live (the repo's mta/ directory).
+mta_source_dir: "{{ playbook_dir }}/../../../mta"
+
+postfix_hostname: mta1.example.com          # must match the PTR of the stream IPs' HELO
+postfix_mydomain: example.com
+postfix_inet_interfaces: [all]
+postfix_inet_protocols: ipv4
+
+# App and worker networks: the ONLY sources allowed to relay (no open relay, §12).
+postfix_app_networks: [10.10.0.0/24]
+
+postfix_inbound_connection_rate_limit: 60   # per client per minute (bounce MX is public)
+postfix_inbound_message_rate_limit: 120
+postfix_message_size_limit: 26214400        # 25 MB
+
+# Q-DEL-2 default: Postfix's own 5 days.
+postfix_maximal_queue_lifetime: 5d
+postfix_bounce_queue_lifetime: 5d
+
+postfix_tls_cert_file: /etc/ssl/certs/ssl-cert-snakeoil.pem
+postfix_tls_key_file: /etc/ssl/private/ssl-cert-snakeoil.key
+
+# Staging: send everything to the sink, never to a real recipient (§6.2).
+postfix_sink_mode: false
+postfix_sink_transport: "discard:staging sink"
+
+postfix_bounce_pipe_maxproc: 10
+forwarder_user: mtaforward                   # runs forward-bounce
+shipper_user: mtaship                        # runs ship-postfix-log
+
+# One transport per stream, each bound to its pool's IP (§10.1, §10.3).
+# destination_concurrency_limit / destination_rate_delay are Q-POL-1: leave
+# them out until decided, and Postfix's defaults apply. Optional relayhost
+# sends a stream through a smart host (a relay provider, or the test sink).
+postfix_streams:
+  - name: marketing
+    bind_address: ""                         # e.g. 203.0.113.10 — the marketing pool IP
+    helo_name: mta1.example.com              # = PTR of bind_address
+  - name: transactional
+    bind_address: ""
+    helo_name: mta1.example.com
+
+# The app's intake (forward-bounce / ship-postfix-log). The secret comes from
+# the vault: vault_mta_ingest_secret — never in plain text here.
+mta_intake_url: https://app.internal.example.com
+mta_ingest_secret: "{{ vault_mta_ingest_secret }}"
+mta_intake_ca_file: ""
+
+# Filled from `manage.py export_mta_maps` by the role (see tasks/maps.yml).
+mta_maps:
+  signing: []
+  sender_transport: []
+  bounce_domains: []
+
+# OpenDKIM wiring shared with the opendkim role.
+opendkim_socket: inet:127.0.0.1:8891

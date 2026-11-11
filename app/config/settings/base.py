@@ -94,6 +94,15 @@ GLOBAL_MAX_MSGS_PER_MINUTE = env.int("GLOBAL_MAX_MSGS_PER_MINUTE", default=200)
 DEFAULT_PROVIDER_MAX_CONCURRENCY = env.int("DEFAULT_PROVIDER_MAX_CONCURRENCY", default=5)
 DEFAULT_PROVIDER_MAX_PER_HOUR = env.int("DEFAULT_PROVIDER_MAX_PER_HOUR", default=2000)
 CAMPAIGN_EXPANSION_BATCH_SIZE = env.int("CAMPAIGN_EXPANSION_BATCH_SIZE", default=500)
+# Requests per minute per API token on POST /api/v1/messages. 0 = no limit:
+# the numbers are Q-POL-1, and the spec says to apply none until decided.
+MESSAGES_API_RATE_PER_MINUTE = env.int("MESSAGES_API_RATE_PER_MINUTE", default=0)
+# Campaign preflight renders this many real recipients (BUILD.md §10.6.3).
+CAMPAIGN_PREFLIGHT_SAMPLE_SIZE = env.int("CAMPAIGN_PREFLIGHT_SAMPLE_SIZE", default=5)
+# Contact import from a file (console). An import over either limit is rejected
+# whole, never partly applied. Keep nginx client_max_body_size above the bytes.
+CONTACT_IMPORT_MAX_BYTES = env.int("CONTACT_IMPORT_MAX_BYTES", default=10 * 1024 * 1024)
+CONTACT_IMPORT_MAX_ROWS = env.int("CONTACT_IMPORT_MAX_ROWS", default=100_000)
 
 # ─── Retry policy (§9.4) ─────────────────────────────────────────────────
 RETRY_BACKOFF_SECONDS = [
@@ -104,6 +113,9 @@ RETRY_BACKOFF_SECONDS = [
 ]
 MAX_DELIVERY_ATTEMPTS = env.int("MAX_DELIVERY_ATTEMPTS", default=6)
 MESSAGE_MAX_AGE_HOURS = env.int("MESSAGE_MAX_AGE_HOURS", default=72)
+# How long a job the policy service HOLDs waits before it is asked again.
+# Not in the spec (Q-DEL-2 territory); short enough that a lifted pause resumes quickly.
+DELIVERY_HOLD_RETRY_SECONDS = env.int("DELIVERY_HOLD_RETRY_SECONDS", default=300)
 
 # ─── Suppression (§8.2) ──────────────────────────────────────────────────
 SOFT_BOUNCE_SUPPRESS_THRESHOLD = env.int("SOFT_BOUNCE_SUPPRESS_THRESHOLD", default=5)
@@ -137,8 +149,24 @@ SENTRY_DSN = env.str("SENTRY_DSN", default="")
 
 # ─── Security ────────────────────────────────────────────────────────────
 MFA_REQUIRED_ROLES = env.list("MFA_REQUIRED_ROLES", default=["SYSTEM_ADMIN", "APPROVER"])
+# Off only for local development convenience. Production refuses to boot
+# without it (run_boot_guards), and the console shows "MFA off" while it is.
+MFA_ENFORCED = env.bool("MFA_ENFORCED", default=True)
 API_TOKEN_DEFAULT_TTL_DAYS = env.int("API_TOKEN_DEFAULT_TTL_DAYS", default=90)
 WEBHOOK_SIGNING_SECRET = env.str("WEBHOOK_SIGNING_SECRET", default="")
+# Provider webhooks older or newer than this are refused (replay protection).
+WEBHOOK_REPLAY_WINDOW_S = env.int("WEBHOOK_REPLAY_WINDOW_S", default=300)
+# Signs bounce emails and Postfix log lines posted by the MTA hosts
+# (mta/bin/forward-bounce, mta/bin/ship-postfix-log). Separate from the
+# provider webhook secret. Empty: those endpoints refuse everything.
+MTA_INGEST_SECRET = env.str("MTA_INGEST_SECRET", default="")
+# Bearer token Prometheus sends to /metrics. Empty: /metrics answers 404.
+METRICS_TOKEN = env.str("METRICS_TOKEN", default="")
+# Fernet keys for EncryptedCharField (MFA secrets). Independent of SECRET_KEY so
+# either can rotate without the other (Q-SEC-1). The first key encrypts; every
+# key decrypts — to rotate, prepend a new key and keep the old one until
+# re-encrypted. Empty = derive from SECRET_KEY, which production refuses.
+FIELD_ENCRYPTION_KEYS = env.list("FIELD_ENCRYPTION_KEYS", default=[])
 SESSION_COOKIE_AGE = env.int("SESSION_COOKIE_AGE", default=28800)
 ABUSE_CONTACT_EMAIL = env.str("ABUSE_CONTACT_EMAIL", default="")
 
@@ -148,6 +176,13 @@ CSRF_COOKIE_HTTPONLY = False  # HTMX reads the token
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_REFERRER_POLICY = "same-origin"
 X_FRAME_OPTIONS = "DENY"
+
+# ─── Email templates (BUILD.md §10.5, §10.12) ────────────────────────────
+# Unset keys use the component's defaults (email_templates/conf.py): footer
+# requires only unsubscribe_url (Q-TPL-1), 102,400-byte limits (Q-TPL-2).
+EMAIL_TEMPLATES = {
+    "AUDIT_FUNC": "audit.adapters.record_component_event",
+}
 
 # ─── Django plumbing ─────────────────────────────────────────────────────
 INSTALLED_APPS = [
@@ -160,30 +195,38 @@ INSTALLED_APPS = [
     "django.contrib.postgres",
     "rest_framework",
     "django_htmx",
-    # Platform apps. NB: the templating app is deliberately NOT called
+    # Platform apps. NB: the templates app is deliberately NOT called
     # "templates" — that name collides with Django template discovery (§3).
     "accounts",
     "domains",
     "contacts",
     "consent",
     "suppression",
-    "templating",
+    # Lives at the repo root, not under app/ (BUILD.md §10.5).
+    "email_templates",
     "campaigns",
     "delivery",
     "events",
-    "reporting",
     "audit",
     "api",
+    "console",
     "ui",
     "common",
 ]
 
 MIDDLEWARE = [
+    # First: probes and Prometheus reach containers by IP, which ALLOWED_HOSTS
+    # and the HTTPS redirect would refuse. Answers only /health/* and /metrics.
+    "common.health.ProbeMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    # Serves /static/ from the app itself (gunicorn and runserver alike).
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    # Must follow AuthenticationMiddleware: it reads request.user.
+    "accounts.middleware.MfaEnforcementMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "django_htmx.middleware.HtmxMiddleware",
@@ -212,6 +255,17 @@ TEMPLATES = [
 ]
 
 AUTH_USER_MODEL = "accounts.User"
+# Platform roles (accounts.Role) grant Django model permissions through
+# RolePermissionBackend, so components that check has_perm() — such as
+# email_templates — work without per-user permission rows.
+AUTHENTICATION_BACKENDS = [
+    "django.contrib.auth.backends.ModelBackend",
+    "accounts.backends.RolePermissionBackend",
+]
+# The console's sign-in page; the MFA pages and console views redirect here.
+LOGIN_URL = "console:login"
+# Django's default, /accounts/profile/, does not exist here.
+LOGIN_REDIRECT_URL = "console:today"
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
     {
@@ -228,11 +282,23 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = "/static/"
+# Production serves collectstatic output from STATIC_ROOT; local settings let
+# WhiteNoise read straight from the app directories instead.
+WHITENOISE_USE_FINDERS = False
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_DIRS = [BASE_DIR / "static"]
+# Staging/production (and the image build): hashed, pre-compressed files that
+# WhiteNoise can cache forever. Local and tests keep Django's plain storage.
+PRODUCTION_STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
+}
 
 REST_FRAMEWORK = {
-    "DEFAULT_AUTHENTICATION_CLASSES": ["rest_framework.authentication.SessionAuthentication"],
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "api.authentication.ApiTokenAuthentication",
+        "rest_framework.authentication.SessionAuthentication",
+    ],
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
     "UNAUTHENTICATED_USER": None,
@@ -287,6 +353,17 @@ def run_boot_guards(environment: str) -> None:
             )
         if not WEBHOOK_SIGNING_SECRET:
             problems.append("WEBHOOK_SIGNING_SECRET is required to authenticate provider webhooks")
+        if not MFA_ENFORCED:
+            problems.append("MFA_ENFORCED must be true in production")
+        if len(MTA_INGEST_SECRET) < 32:
+            problems.append(
+                "MTA_INGEST_SECRET (32+ characters) is required to accept bounces from the MTA"
+            )
+        if MTA_INGEST_SECRET and MTA_INGEST_SECRET == WEBHOOK_SIGNING_SECRET:
+            problems.append("MTA_INGEST_SECRET must differ from WEBHOOK_SIGNING_SECRET")
+        if len(METRICS_TOKEN) < 32:
+            problems.append("METRICS_TOKEN (32+ characters) is required: production is monitored")
+        problems.extend(_check_field_encryption_keys())
         problems.extend(_check_dkim_key_dir())
 
     else:
@@ -303,11 +380,34 @@ def run_boot_guards(environment: str) -> None:
         )
 
 
+def _check_field_encryption_keys() -> list[str]:
+    """Production must not tie MFA secrets to SECRET_KEY (Q-SEC-1)."""
+    from cryptography.fernet import Fernet
+
+    if not FIELD_ENCRYPTION_KEYS:
+        return [
+            "FIELD_ENCRYPTION_KEYS is required — field encryption must not derive from SECRET_KEY"
+        ]
+    for i, key in enumerate(FIELD_ENCRYPTION_KEYS):
+        try:
+            Fernet(key)
+        except ValueError:
+            return [f"FIELD_ENCRYPTION_KEYS[{i}] is not a valid Fernet key"]
+    return []
+
+
 def _check_dkim_key_dir() -> list[str]:
-    """DKIM private keys must exist and must not be world-readable."""
+    """If DKIM private keys are on this host they must not be world-readable.
+
+    OpenDKIM signs on the MTA hosts (mta/, BUILD.md §10.10); app and worker
+    nodes never read the keys and should not hold them, so a missing
+    directory is fine.
+    """
     path = Path(DKIM_KEY_DIR)
+    if not path.exists():
+        return []
     if not path.is_dir():
-        return [f"DKIM_KEY_DIR does not exist or is not a directory: {DKIM_KEY_DIR}"]
+        return [f"DKIM_KEY_DIR is not a directory: {DKIM_KEY_DIR}"]
     if os.name != "posix":
         # Mode bits are not meaningful on Windows; production is Linux.
         return []

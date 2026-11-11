@@ -1,0 +1,20 @@
+{% extends "console/base.html" %}
+{% block title %}Unsubscribe page{% endblock %}
+
+{% block content %}
+<div class="phead">
+  <div><h1>Unsubscribe page</h1><p class="sub">What a recipient sees from the link in the footer. No login. Mail clients that support one-click unsubscribe (RFC 8058) skip this page entirely.</p></div>
+  <div class="actions"><span class="tag built">built · §10.8.4</span></div>
+</div>
+<div class="grid g2">
+  <div>
+    <p class="small muted" style="margin-bottom:6px">Before clicking</p>
+    <div class="unsub"><span class="from">Email Platform · {{ ENVIRONMENT }}</span>{% include "console/_unsub_card.html" with state="confirm" preview=True %}</div>
+  </div>
+  <div>
+    <p class="small muted" style="margin-bottom:6px">After clicking</p>
+    <div class="unsub"><span class="from">Email Platform · {{ ENVIRONMENT }}</span>{% include "console/_unsub_card.html" with state="done" %}</div>
+  </div>
+</div>
+<div class="note">Scope: all marketing email from this organization — one click adds a marketing suppression and records the consent withdrawal. <span class="q">Q-EVT-4</span> Opening the page alone (a link scanner) changes nothing.</div>
+{% endblock %}

@@ -1,0 +1,20 @@
+# Weekly restore test: restores the newest backup into a scratch database on
+# RESTORE_DATABASE_URL's server (NOT the production primary), checks the
+# append-only tables, drops it. An untested backup is not a backup.
+[Unit]
+Description=Email platform: restore the newest backup and verify it
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+# The env file's RESTORE_DATABASE_URL replaces DATABASE_URL for this run.
+ExecStart=/bin/sh -c '. /etc/email-platform/backup.env && exec /usr/bin/docker run --rm \
+    --name email-platform-restore-check \
+    --env-file /etc/email-platform/backup.env \
+    -e DATABASE_URL="$RESTORE_DATABASE_URL" \
+    -v /var/lib/node_exporter/textfile:/metrics \
+    -e BACKUP_METRICS_FILE=/metrics/pgbackup-restore.prom \
+    email-platform-backup:latest restore-check'
+TimeoutStartSec=6h

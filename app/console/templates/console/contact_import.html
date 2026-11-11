@@ -1,0 +1,53 @@
+{% extends "console/base.html" %}
+{% load console %}
+{% block title %}Import {{ imp.original_filename }}{% endblock %}
+
+{% block content %}
+<div class="phead">
+  <div>
+    <p class="crumb"><a href="{% url 'console:audience' %}">Contacts and consent</a> / Import</p>
+    <h1>{{ imp.original_filename }} {% pill imp.status imp.get_status_display %}</h1>
+    <p class="sub">Into list “{{ imp.contact_list.name }}” · attested by {{ imp.attested_by.email }} on {{ imp.attested_at|date:"j M Y H:i" }}</p>
+  </div>
+</div>
+{% if not imp.is_finished %}
+<div class="note">Checking the file… this page refreshes by itself. Nothing is added until every row has been checked.</div>
+{% elif imp.status == "REJECTED" %}
+<div class="note bad"><b>Rejected — nothing was imported.</b> {{ imp.error }}</div>
+{% elif imp.status == "FAILED" %}
+<div class="note bad"><b>Failed — nothing was imported.</b> {{ imp.error }} It is safe to upload the file again.</div>
+{% endif %}
+<div class="tiles">
+  <div class="tile"><span class="k">Rows</span><span class="v">{{ imp.total_rows|num }}</span></div>
+  <div class="tile"><span class="k">Added</span><span class="v">{{ imp.imported_count|num }}</span><span class="d">{% if imp.contact_list.stream == "MARKETING" %}each with a consent record{% else %}transactional list{% endif %}</span></div>
+  {% for label, n, hint in skipped %}
+  <div class="tile"><span class="k">{{ label }}</span><span class="v">{{ n|num }}</span><span class="d">{{ hint }}</span></div>
+  {% endfor %}
+</div>
+<div class="grid split">
+  <div class="panel">
+    <header><h2>Rows skipped</h2>{% if imp.issues|length >= 200 %}<span class="muted small">first 200 shown</span>{% endif %}</header>
+    {% if imp.issues %}
+    <div class="tablewrap"><table>
+      <thead><tr><th class="r">Line</th><th>Reason</th><th>Detail</th></tr></thead>
+      <tbody>{% for i in imp.issues %}
+        <tr><td class="r num">{{ i.row }}</td><td><code>{{ i.code }}</code></td><td class="small">{{ i.detail }}</td></tr>
+      {% endfor %}</tbody>
+    </table></div>
+    {% else %}<p class="empty">{% if imp.is_finished %}None.{% else %}Not checked yet.{% endif %}</p>{% endif %}
+  </div>
+  <div class="panel">
+    <header><h2>Evidence</h2></header>
+    <div class="body"><dl class="kv">
+      <dt>Consent source</dt><dd>{{ imp.consent_source|linebreaksbr }}</dd>
+      <dt>Attestation</dt><dd>{{ imp.attestation_text|linebreaksbr }}</dd>
+      <dt>File</dt><dd>{% if imp.file.redacted_at %}redacted {{ imp.file.redacted_at|date:"j M Y" }}{% else %}{{ imp.file.size|filesizeformat }}{% endif %} · <code>{{ imp.file.sha256|truncatechars:17 }}</code></dd>
+      {% if imp.completed_at %}<dt>Finished</dt><dd>{{ imp.completed_at|date:"j M Y H:i:s" }}</dd>{% endif %}
+    </dl></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}{% if not imp.is_finished %}
+<script>setTimeout(function () { location.reload(); }, 3000);</script>
+{% endif %}{% endblock %}

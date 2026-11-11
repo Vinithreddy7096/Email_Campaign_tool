@@ -1,10 +1,12 @@
 """
 Custom model fields.
 
-⚠️ Key management: EncryptedCharField derives its key from SECRET_KEY. Rotating
-SECRET_KEY therefore makes existing ciphertext undecryptable. A dedicated,
-separately-rotatable field-encryption key belongs in Vault — see
-docs/OPEN_QUESTIONS.md (Q-SEC-1) before this is used in production.
+Key management: EncryptedCharField uses FIELD_ENCRYPTION_KEYS, a list of Fernet
+keys independent of SECRET_KEY. The first key encrypts and every key decrypts,
+so keys rotate by prepending a new one. Outside production an empty list falls
+back to a key derived from SECRET_KEY for convenience; production refuses to
+boot without real keys (Q-SEC-1). Where the keys live (Vault, cloud secret
+manager, Ansible Vault) is still undecided.
 """
 
 from __future__ import annotations
@@ -13,17 +15,20 @@ import base64
 import hashlib
 from typing import Any
 
-from cryptography.fernet import Fernet, InvalidToken
+from cryptography.fernet import Fernet, InvalidToken, MultiFernet
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 from django.db import models
 
 
-def _fernet() -> Fernet:
+def _fernet() -> MultiFernet:
+    keys = list(getattr(settings, "FIELD_ENCRYPTION_KEYS", []))
+    if keys:
+        return MultiFernet([Fernet(k) for k in keys])
     if not settings.SECRET_KEY:
-        raise ImproperlyConfigured("SECRET_KEY is required to derive the field-encryption key")
+        raise ImproperlyConfigured("FIELD_ENCRYPTION_KEYS or SECRET_KEY is required")
     digest = hashlib.sha256(settings.SECRET_KEY.encode("utf-8")).digest()
-    return Fernet(base64.urlsafe_b64encode(digest))
+    return MultiFernet([Fernet(base64.urlsafe_b64encode(digest))])
 
 
 class EncryptedCharField(models.TextField):
@@ -46,6 +51,6 @@ class EncryptedCharField(models.TextField):
             return _fernet().decrypt(value.encode("ascii")).decode("utf-8")
         except InvalidToken as exc:
             raise ValueError(
-                "Could not decrypt field value. SECRET_KEY may have been rotated; "
-                "see docs/OPEN_QUESTIONS.md Q-SEC-1."
+                "Could not decrypt field value: no key in FIELD_ENCRYPTION_KEYS matches. "
+                "Was a key removed before data was re-encrypted? See Q-SEC-1."
             ) from exc

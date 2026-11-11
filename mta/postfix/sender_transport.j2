@@ -1,0 +1,10 @@
+# {{ ansible_managed | default("Rendered from mta/postfix/sender_transport.j2 — do not edit on the host") }}
+# Source: manage.py export_mta_maps (sender_transport). postmap after changes.
+#
+# Envelope-sender domain (the stream's return-path domain) → that stream's
+# transport in master.cf, and its optional next hop (relayhost). Anything not
+# listed hits default_transport (refused).
+{% for route in mta_maps.sender_transport %}
+@{{ route.return_path_domain }}    {{ route.stream }}:{% for s in postfix_streams if s.name == route.stream %}{{ s.relayhost | default("") }}{% endfor %}
+
+{% endfor %}

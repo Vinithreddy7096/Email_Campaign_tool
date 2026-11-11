@@ -1,0 +1,34 @@
+{% extends "console/base.html" %}
+{% load console %}
+{% block title %}Import contacts{% endblock %}
+
+{% block content %}
+<div class="phead">
+  <div>
+    <p class="crumb"><a href="{% url 'console:audience' %}">Contacts and consent</a> / Import</p>
+    <h1>Import contacts</h1>
+    <p class="sub">Every row becomes a consent record that names you as the attester. Nothing is sent by importing.</p>
+  </div>
+</div>
+<div class="grid split">
+  <div class="panel">
+    <header><h2>File and attestation</h2></header>
+    <form method="post" enctype="multipart/form-data" class="body">{% csrf_token %}
+      {% include "console/_form_fields.html" %}
+      <div class="actions"><button class="btn primary" type="submit">Upload and check</button><a class="btn" href="{% url 'console:audience' %}">Cancel</a></div>
+    </form>
+  </div>
+  <div class="stack">
+    <div class="note bad"><b>Purchased, rented, scraped or harvested lists are prohibited.</b> Only import people who asked to receive this mail. The attestation is kept with the import and linked from every consent record it creates.</div>
+    <div class="note">
+      <b>File format</b> — CSV, UTF-8, with a header row. Up to {{ max_rows|num }} rows and {{ max_bytes|filesizeformat }}.
+      <pre class="mono small">email,first_name,last_name,consent_date,plan
+ada@example.com,Ada,Lovelace,2025-03-01,pro</pre>
+      <code>consent_date</code> is when the person opted in; without it, the time of this attestation is used.
+    </div>
+    <div class="note">
+      <b>Skipped, never added:</b> invalid addresses; duplicates and existing members; suppressed addresses; anyone who withdrew marketing consent before or whose data was erased. Existing contacts' names and attributes are not overwritten.
+    </div>
+  </div>
+</div>
+{% endblock %}

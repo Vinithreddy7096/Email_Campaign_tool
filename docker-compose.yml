@@ -5,7 +5,7 @@
 # MailHog UI on http://localhost:8025 and reaches nothing on the public internet.
 
 x-app: &app
-  build: .
+  build: {context: ., target: dev}
   env_file: [.env]
   environment:
     DJANGO_SETTINGS_MODULE: config.settings.local
@@ -30,7 +30,9 @@ services:
       POSTGRES_USER: mailer
       POSTGRES_PASSWORD: mailer
       POSTGRES_DB: mailer
-    ports: ["5432:5432"]
+    # Host port is configurable: a machine may already run Postgres on 5432.
+    # Containers always reach it as postgres:5432.
+    ports: ["${POSTGRES_HOST_PORT:-5432}:5432"]
     volumes: ["pgdata:/var/lib/postgresql/data"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U mailer -d mailer"]
@@ -48,7 +50,9 @@ services:
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
       interval: 10s
-      timeout: 5s
+      # rabbitmq-diagnostics boots its own Erlang VM; under memory pressure that
+      # alone can exceed 5s and mark a healthy broker unhealthy.
+      timeout: 15s
       retries: 12
 
   redis:
@@ -86,12 +90,13 @@ services:
 
   worker-render:
     <<: *app
-    command: ["celery", "-A", "config", "worker", "-Q", "render", "-c", "8", "-n", "render@%h"]
+    # Concurrency defaults are the §9.2 values; override in .env on small machines.
+    command: ["celery", "-A", "config", "worker", "-Q", "render", "-c", "${RENDER_CONCURRENCY:-8}", "-n", "render@%h"]
 
   # Prefetch is pinned to 1 globally in config/celery.py — critical for this queue.
   worker-deliver:
     <<: *app
-    command: ["celery", "-A", "config", "worker", "-Q", "deliver", "-c", "16", "-n", "deliver@%h"]
+    command: ["celery", "-A", "config", "worker", "-Q", "deliver", "-c", "${DELIVER_CONCURRENCY:-16}", "-n", "deliver@%h"]
 
   worker-events:
     <<: *app
@@ -110,17 +115,46 @@ services:
     command: ["celery", "-A", "config", "beat", "--loglevel", "INFO"]
 
   # Optional locally: `docker compose --profile observability up -d`
+  # First: put METRICS_TOKEN (same value as in .env) in
+  # monitoring/local-secrets/metrics_token — that directory is git-ignored.
   prometheus:
-    image: prom/prometheus
+    image: prom/prometheus:v2.54.1
     profiles: ["observability"]
     ports: ["9090:9090"]
-    volumes: ["./monitoring/prometheus:/etc/prometheus"]
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/rules:/etc/prometheus/rules:ro
+      - ./monitoring/prometheus/targets.local:/etc/prometheus/targets:ro
+      - ./monitoring/local-secrets:/etc/prometheus/secrets:ro
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    profiles: ["observability"]
+    ports: ["9093:9093"]
+    volumes:
+      - ./monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ./monitoring/local-secrets:/etc/alertmanager/secrets:ro
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    profiles: ["observability"]
+    environment:
+      DATA_SOURCE_NAME: postgresql://mailer:mailer@postgres:5432/mailer?sslmode=disable
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.62.0
+    profiles: ["observability"]
+    environment:
+      REDIS_ADDR: redis://redis:6379
 
   grafana:
-    image: grafana/grafana
+    image: grafana/grafana:11.2.0
     profiles: ["observability"]
     ports: ["3000:3000"]
-    volumes: ["grafanadata:/var/lib/grafana"]
+    volumes:
+      - grafanadata:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
 
 volumes:
   pgdata:

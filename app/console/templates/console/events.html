@@ -1,0 +1,92 @@
+{% extends "console/base.html" %}
+{% load console %}
+{% block title %}Bounces and complaints{% endblock %}
+
+{% block content %}
+<div class="phead">
+  <div><h1>Bounces and complaints</h1><p class="sub">Delivery logs, bounce messages, feedback loops, provider webhooks and unsubscribes become one event stream. Hard bounces, complaints and unsubscribes suppress immediately.</p></div>
+  <div class="actions"><span class="tag built">built · §10.8</span></div>
+</div>
+
+<div class="panel">
+  <header><h2>By recipient provider · last 24 hours</h2><span class="muted small">spec §14 Provider</span></header>
+  {% if by_provider %}
+  <div class="tablewrap"><table>
+    <thead><tr><th>Provider</th><th class="r">Reports</th><th class="r">Delivered</th><th class="r">Deferred</th><th class="r">Hard bounce</th><th class="r">Soft bounce</th><th class="r">Complaints</th></tr></thead>
+    <tbody>{% for p in by_provider %}
+      <tr><td>{{ p.provider }}</td><td class="r num">{{ p.total|num }}</td>
+        <td class="r num">{{ p.delivered|num }}</td><td class="r num">{{ p.deferred|num }}</td>
+        <td class="r num">{{ p.hard|num }}</td><td class="r num">{{ p.soft|num }}</td>
+        <td class="r num">{% if p.complaints %}<span class="pill bad">{{ p.complaints|num }}</span>{% else %}0{% endif %}</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}<p class="empty">No delivery reports in the last 24 hours. They arrive from the mail server's log, bounce mailbox and provider webhooks.</p>{% endif %}
+</div>
+
+<div class="grid split">
+  <div class="stack">
+    <div class="panel">
+      <header><h2>Unclassified reports · {{ unknown|length }}</h2><span class="muted small">no suppression until reviewed</span></header>
+      {% if unknown %}
+      <div class="tablewrap"><table class="small">
+        <thead><tr><th>Received</th><th>Source</th><th>What it said</th><th></th></tr></thead>
+        <tbody>{% for e in unknown %}
+          <tr>
+            <td class="num">{{ e.occurred_at|date:"j M H:i" }}</td>
+            <td>{{ e.get_source_display }}<div class="muted">{{ e.recipient_domain|default:"recipient unknown" }}</div></td>
+            <td class="mono">{{ e.diagnostic|default:"—"|truncatechars:110 }}{% if not e.job %}<div class="muted">not tied to a message we sent (no signed bounce address)</div>{% endif %}</td>
+            <td>
+              {% if perms.events.add_eventreview %}
+              <form method="post" class="actions">{% csrf_token %}<input type="hidden" name="event" value="{{ e.pk }}">
+                {% for value, short, title in resolutions %}<button class="btn {% if value == 'HARD_BOUNCE' or value == 'COMPLAINT' %}danger{% endif %}" name="classify" value="{{ value }}" title="{{ title }}" {% if value != 'IGNORE' and not e.email_hash %}disabled{% endif %}>{{ short }}</button>{% endfor %}
+              </form>
+              {% else %}<span class="small muted">Needs the System Administrator role</span>{% endif %}
+            </td>
+          </tr>{% endfor %}
+        </tbody>
+      </table></div>
+      <div class="body"><p class="small muted">Policy rejections and invalid recipients both suppress today. <span class="q">Q-EVT-3</span> Soft bounces are counted, never auto-suppressed. <span class="q">Q-EVT-1</span></p></div>
+      {% else %}<p class="empty">Nothing to classify.</p>{% endif %}
+    </div>
+
+    <div class="panel">
+      <header><h2>Maybe sent · {{ review|length }}</h2><span class="muted small">held, never resent automatically <span class="q">Q-DEL-1</span></span></header>
+      {% if review %}
+      <div class="tablewrap"><table class="small">
+        <thead><tr><th>Since</th><th>Recipient</th><th>Campaign</th><th>Why</th><th></th></tr></thead>
+        <tbody>{% for j in review %}
+          <tr>
+            <td class="num">{{ j.updated_at|date:"j M H:i" }}</td>
+            <td class="mono">{{ j.recipient }}</td>
+            <td>{% if j.campaign %}<a href="{% url 'console:campaign' j.campaign.pk %}">{{ j.campaign.name }}</a>{% else %}<span class="muted">transactional</span>{% endif %}</td>
+            <td class="mono">{{ j.review_reason|truncatechars:80 }}</td>
+            <td><form method="post" class="actions">{% csrf_token %}<input type="hidden" name="job" value="{{ j.pk }}">
+              {% if perms.delivery.change_recipientjob %}
+                {% if j.state == "SUBMITTED_TO_MTA" %}<button class="btn" name="resolution" value="accepted" title="The MTA log shows it was taken">Accepted</button>{% endif %}
+                <button class="btn" name="resolution" value="resend" title="Risk of a duplicate">Send again</button>
+                <button class="btn danger" name="resolution" value="cancel">Cancel</button>
+              {% else %}<span class="small muted">Needs the System Administrator role</span>{% endif %}
+            </form></td>
+          </tr>{% endfor %}
+        </tbody>
+      </table></div>
+      {% else %}<p class="empty">Nothing needs review.</p>{% endif %}
+    </div>
+  </div>
+
+  <div class="panel">
+    <header><h2>Latest events</h2></header>
+    {% if latest %}
+    <div class="tablewrap"><table class="small">
+      <thead><tr><th>Time</th><th>Type</th><th>Code</th><th>Provider</th></tr></thead>
+      <tbody>{% for e in latest %}
+        <tr><td class="num">{{ e.occurred_at|date:"j M H:i:s" }}</td>
+          <td>{% if e.type == "DELIVERED" %}<span class="pill ok">Delivered</span>{% elif e.type == "DEFERRED" %}<span class="pill warn">Deferred</span>{% elif e.type == "HARD_BOUNCE" %}<span class="pill bad">Hard bounce</span>{% elif e.type == "SOFT_BOUNCE" %}<span class="pill warn">Soft bounce</span>{% elif e.type == "COMPLAINT" %}<span class="pill bad">Complaint</span>{% elif e.type == "UNSUBSCRIBE" %}<span class="pill">Unsubscribe</span>{% else %}<span class="pill info">Unclassified</span>{% endif %}</td>
+          <td class="mono">{{ e.smtp_code|default:"" }} {{ e.enhanced_code|default:e.get_source_display }}</td>
+          <td>{{ e.provider|default:"—" }}</td></tr>{% endfor %}
+      </tbody>
+    </table></div>
+    {% else %}<p class="empty">No events yet.</p>{% endif %}
+  </div>
+</div>
+{% endblock %}

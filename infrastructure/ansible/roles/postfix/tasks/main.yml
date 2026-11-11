@@ -1,0 +1,116 @@
+# Postfix MTA host (BUILD.md §10.10). Not containerised (spec §13).
+- name: Refuse unsafe settings before touching the host
+  ansible.builtin.assert:
+    that:
+      - postfix_app_networks | length > 0
+      - "'0.0.0.0/0' not in postfix_app_networks"
+      - "'::/0' not in postfix_app_networks"
+      - postfix_streams | map(attribute='name') | list | sort == ['marketing', 'transactional']
+      - env_name != 'staging' or postfix_sink_mode | bool
+    fail_msg: >-
+      postfix_app_networks must list only the app networks (never everything), both
+      streams must be defined, and staging must run in sink mode (§6.2).
+
+# mta_maps is loaded once by the playbook's pre_tasks (tasks/maps.yml), so
+# this role and the opendkim role see the same domains.
+
+- name: Packages
+  ansible.builtin.apt:
+    name: [postfix, ca-certificates, ssl-cert, python3]
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Intake group (reads the intake secret)
+  ansible.builtin.group:
+    name: mtaintake
+    system: true
+
+- name: Service users for the forwarder and the log shipper
+  ansible.builtin.user:
+    name: "{{ item }}"
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+    groups: [mtaintake]
+    append: true
+  loop: ["{{ forwarder_user }}", "{{ shipper_user }}"]
+
+- name: Intake configuration directory
+  ansible.builtin.file:
+    path: /etc/email-platform
+    state: directory
+    owner: root
+    group: mtaintake
+    mode: "0750"
+
+- name: Intake configuration (holds the secret)
+  ansible.builtin.copy:
+    dest: /etc/email-platform/mta-intake.env
+    owner: root
+    group: mtaintake
+    mode: "0640"
+    content: |
+      INTAKE_URL={{ mta_intake_url }}
+      MTA_INGEST_SECRET={{ mta_ingest_secret }}
+      {% if mta_intake_ca_file %}INTAKE_CA_FILE={{ mta_intake_ca_file }}{% endif %}
+  no_log: true
+  notify: Restart ship-postfix-log
+
+- name: Forwarder and log shipper
+  ansible.builtin.copy:
+    src: "{{ mta_source_dir }}/bin/{{ item }}"
+    dest: "/usr/local/bin/{{ item }}"
+    owner: root
+    group: root
+    mode: "0755"
+  loop: [forward-bounce, ship-postfix-log]
+  notify: Restart ship-postfix-log
+
+- name: Postfix configuration
+  ansible.builtin.template:
+    src: "{{ mta_source_dir }}/postfix/{{ item }}.j2"
+    dest: "/etc/postfix/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: [main.cf, master.cf]
+  notify: Reload postfix
+
+- name: Postfix lookup tables
+  ansible.builtin.template:
+    src: "{{ mta_source_dir }}/postfix/{{ item }}.j2"
+    dest: "/etc/postfix/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: [transport, sender_transport]
+  register: postfix_maps
+
+- name: Rebuild changed lookup tables
+  ansible.builtin.command: "postmap /etc/postfix/{{ item.item }}"
+  loop: "{{ postfix_maps.results }}"
+  when: item.changed
+  changed_when: true
+  notify: Reload postfix
+
+- name: Check the configuration (fails the play before a reload)
+  ansible.builtin.command: postfix check
+  changed_when: false
+
+- name: Log shipper service
+  ansible.builtin.copy:
+    src: "{{ mta_source_dir }}/systemd/ship-postfix-log.service"
+    dest: /etc/systemd/system/ship-postfix-log.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart ship-postfix-log
+
+- name: Services running
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  loop: [postfix, ship-postfix-log]

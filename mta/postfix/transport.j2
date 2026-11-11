@@ -1,0 +1,12 @@
+# {{ ansible_managed | default("Rendered from mta/postfix/transport.j2 — do not edit on the host") }}
+# Source: manage.py export_mta_maps (bounce_domains). postmap after changes.
+#
+# Our bounce / FBL domains: piped to the app's event intake.
+{% for domain in mta_maps.bounce_domains %}
+{{ domain }}    bounces:
+{% endfor %}
+{% if postfix_sink_mode %}
+
+# STAGING SINK: everything else goes here, never to a real recipient (§6.2).
+*    {{ postfix_sink_transport }}
+{% endif %}

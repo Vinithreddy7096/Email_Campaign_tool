@@ -1,0 +1,83 @@
+# promtool test rules monitoring/prometheus/tests/mailer.rules.test.yml   (CI job "monitoring")
+rule_files:
+  - ../rules/mailer.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # Hand-off lag must persist 10 minutes before paging.
+  - interval: 1m
+    input_series:
+      - series: 'mailer_handoff_lag_seconds{job="mailer", instance="web1"}'
+        values: "0 1000x20"
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: HandoffBacklog
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: HandoffBacklog
+        exp_alerts:
+          - exp_labels: {severity: page, job: mailer, instance: web1}
+            exp_annotations:
+              summary: "Mail due for hand-off has waited 16m 40s"
+              description: "Deliver workers are down, stuck or too few, or the MTA is refusing connections."
+              runbook: docs/runbooks.md#handoff-backlog
+
+  # A sweep heartbeat frozen at t=0 is stale after 5 minutes, then 5m of `for`.
+  - interval: 1m
+    input_series:
+      - series: 'mailer_task_last_run_timestamp_seconds{job="mailer", instance="web1", task="delivery.sweep"}'
+        values: "0x20"
+      - series: 'mailer_task_last_run_timestamp_seconds{job="mailer", instance="web1", task="events.recompute_stats"}'
+        values: "0+60x20"
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: PeriodicTaskStopped
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: PeriodicTaskStopped
+        exp_alerts:
+          - exp_labels: {severity: page, job: mailer, instance: web1, task: delivery.sweep}
+            exp_annotations:
+              summary: "Periodic task delivery.sweep has not run recently"
+              description: "Celery beat or the maintenance/deliver worker is down: retries, held mail and campaign completion stop."
+              runbook: docs/runbooks.md#beat-stopped
+
+  # 30% deferred out of 200 attempts pages; the same ratio on 10 attempts does not.
+  - interval: 1m
+    input_series:
+      - series: 'mailer_send_attempts_last_hour{job="mailer", instance="web1", outcome="ACCEPTED"}'
+        values: "140x30"
+      - series: 'mailer_send_attempts_last_hour{job="mailer", instance="web1", outcome="DEFERRED"}'
+        values: "60x30"
+      - series: 'mailer_send_attempts_last_hour{job="mailer", instance="web2", outcome="ACCEPTED"}'
+        values: "7x30"
+      - series: 'mailer_send_attempts_last_hour{job="mailer", instance="web2", outcome="DEFERRED"}'
+        values: "3x30"
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: SubmissionDeferralsHigh
+        exp_alerts:
+          # The ratio drops the outcome label.
+          - exp_labels: {severity: page, job: mailer, instance: web1}
+            exp_annotations:
+              summary: "30% of hand-offs to the MTA were deferred in the last hour"
+              description: "The MTA is answering 4xx or timing out: check Postfix, OpenDKIM (milter tempfail) and disk."
+              runbook: docs/runbooks.md#mta-deferring
+
+  # Backups: a day-old success is fine, 27 hours is not.
+  - interval: 1h
+    input_series:
+      - series: 'pgbackup_last_success_timestamp_seconds{job="node", instance="app1"}'
+        values: "0x30"
+    alert_rule_test:
+      - eval_time: 24h
+        alertname: BackupStale
+        exp_alerts: []
+      - eval_time: 27h
+        alertname: BackupStale
+        exp_alerts:
+          - exp_labels: {severity: page, job: node, instance: app1}
+            exp_annotations:
+              summary: "The last successful backup was 1d 3h 0m 0s ago"
+              runbook: docs/runbooks.md#restore

@@ -1,0 +1,50 @@
+# Alertmanager routing. severity=page goes to the on-call channel AND email;
+# severity=ticket goes to the team channel. Secrets are files (Alertmanager
+# cannot read environment variables): /etc/alertmanager/secrets/*.
+# Replace the example addresses before use.
+
+global:
+  resolve_timeout: 5m
+  smtp_smarthost: smtp.example.com:587
+  smtp_from: alerts@example.com
+  smtp_auth_username: alerts@example.com
+  smtp_auth_password_file: /etc/alertmanager/secrets/smtp_password
+  smtp_require_tls: true
+
+route:
+  receiver: team
+  group_by: [alertname, instance]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - matchers: [severity="page"]
+      receiver: on-call
+      repeat_interval: 1h
+
+inhibit_rules:
+  # While all sending is paused on purpose, backlog alerts are expected.
+  - source_matchers: [alertname="SendingPausedEverywhere"]
+    target_matchers: [alertname=~"HandoffBacklog|RenderBacklog|QueueBacklog"]
+  # Postgres down explains every pipeline alert; page for the cause only.
+  - source_matchers: [alertname="PostgresDown"]
+    target_matchers: [alertname=~"MailerMetricsDown|HandoffBacklog|PeriodicTaskStopped"]
+
+receivers:
+  - name: on-call
+    email_configs:
+      - to: oncall@example.com
+        send_resolved: true
+    slack_configs:
+      - api_url_file: /etc/alertmanager/secrets/slack_oncall_webhook
+        channel: "#mail-oncall"
+        send_resolved: true
+        title: "{{ .CommonLabels.alertname }} ({{ .Status }})"
+        text: "{{ range .Alerts }}{{ .Annotations.summary }} — {{ .Annotations.runbook }}\n{{ end }}"
+  - name: team
+    slack_configs:
+      - api_url_file: /etc/alertmanager/secrets/slack_team_webhook
+        channel: "#mail-platform"
+        send_resolved: true
+        title: "{{ .CommonLabels.alertname }} ({{ .Status }})"
+        text: "{{ range .Alerts }}{{ .Annotations.summary }} — {{ .Annotations.runbook }}\n{{ end }}"

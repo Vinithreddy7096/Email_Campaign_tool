@@ -1,0 +1,22 @@
+# Production MTA. The addresses below are placeholders until Q-HOST-1 (hosting
+# provider and IPs) is answered. Each stream IP needs a PTR record equal to
+# its helo_name, and forward DNS back to the IP (FCrDNS).
+postfix_hostname: mta1.example.com
+postfix_mydomain: example.com
+postfix_app_networks: [10.10.0.0/24]
+postfix_sink_mode: false
+mta_intake_url: https://app1.internal.example.com
+
+postfix_streams:
+  - name: marketing
+    bind_address: 203.0.113.10
+    helo_name: mkt1.mta.example.com
+    # Q-POL-1 — per-destination (≈ per-provider) limits, when decided:
+    # destination_concurrency_limit: 10
+    # destination_rate_delay: 1s
+  - name: transactional
+    bind_address: 203.0.113.20
+    helo_name: txn1.mta.example.com
+
+# Secrets (vault_mta_ingest_secret, vault_dkim_private_keys) belong in
+# group_vars/mta/vault.yml, encrypted with `ansible-vault encrypt`.

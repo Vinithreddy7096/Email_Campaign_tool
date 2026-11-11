@@ -6,6 +6,9 @@
 *.key
 *.private
 secrets/
+monitoring/local-secrets/
+# Local backup runs (scripts/backup/pgbackup.py with BACKUP_DIR).
+backups/
 # DKIM private keys live in DKIM_KEY_DIR on the MTA host, delivered by Ansible
 # from Vault. If one ever appears in the tree, this stops the commit.
 **/opendkim/keys/
@@ -38,6 +41,8 @@ local_settings.py
 *.tfvars
 !*.tfvars.example
 *.retry
+# Rendered MTA config (scripts/render_mta.py)
+/build/
 
 # ─── Tooling / OS ────────────────────────────────────────────────────────
 .idea/

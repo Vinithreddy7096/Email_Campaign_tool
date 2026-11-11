@@ -1,0 +1,6 @@
+{# BUILD.md §5.3 item 5: the [MOCK] bar is on every page, operator and public alike. #}
+{% if MOCK_MODE %}
+<div class="safety" role="status">
+  <div class="safebar mockbar"><b>[MOCK]</b><span>{{ ENVIRONMENT }} — all outbound SMTP is routed to the local sink. Nothing reaches the internet.</span></div>
+</div>
+{% endif %}

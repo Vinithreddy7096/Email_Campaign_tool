@@ -1,0 +1,172 @@
+{
+  "uid": "email-platform-pipeline",
+  "title": "Email platform — pipeline",
+  "description": "Is mail flowing, is anything stuck, are recipients complaining, are backups fresh. Alerts: monitoring/prometheus/rules/mailer.rules.yml.",
+  "tags": ["email-platform"],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "graphTooltip": 1,
+  "refresh": "1m",
+  "time": {"from": "now-24h", "to": "now"},
+  "templating": {"list": []},
+  "panels": [
+    {
+      "type": "row", "title": "Right now", "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0}, "id": 100, "panels": []
+    },
+    {
+      "id": 1, "type": "stat", "title": "Sending",
+      "description": "GLOBAL_SEND_ENABLED. Off means nothing is handed to the MTA, whatever the pauses say.",
+      "gridPos": {"h": 4, "w": 4, "x": 0, "y": 1},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "expr": "max(mailer_global_send_enabled)", "instant": true}],
+      "fieldConfig": {"defaults": {
+        "mappings": [{"type": "value", "options": {"0": {"text": "Off", "color": "orange"}, "1": {"text": "On", "color": "green"}}}],
+        "color": {"mode": "thresholds"},
+        "thresholds": {"mode": "absolute", "steps": [{"color": "orange", "value": null}, {"color": "green", "value": 1}]}
+      }, "overrides": []},
+      "options": {"colorMode": "background", "graphMode": "none", "textMode": "value", "reduceOptions": {"calcs": ["lastNotNull"]}}
+    },
+    {
+      "id": 2, "type": "stat", "title": "Hand-off lag",
+      "description": "How long the oldest job that is due for hand-off has waited. Pages above 15 minutes.",
+      "gridPos": {"h": 4, "w": 4, "x": 4, "y": 1},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "expr": "max(mailer_handoff_lag_seconds)", "instant": true}],
+      "fieldConfig": {"defaults": {
+        "unit": "s", "color": {"mode": "thresholds"},
+        "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 300}, {"color": "red", "value": 900}]}
+      }, "overrides": []},
+      "options": {"colorMode": "value", "graphMode": "area", "textMode": "value", "reduceOptions": {"calcs": ["lastNotNull"]}}
+    },
+    {
+      "id": 3, "type": "stat", "title": "Jobs needing review",
+      "description": "Lost SMTP replies and render failures — held, never resent (Q-DEL-1). Resolve on the console.",
+      "gridPos": {"h": 4, "w": 4, "x": 8, "y": 1},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "expr": "max(mailer_jobs_review_required)", "instant": true}],
+      "fieldConfig": {"defaults": {
+        "color": {"mode": "thresholds"},
+        "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}]}
+      }, "overrides": []},
+      "options": {"colorMode": "value", "graphMode": "none", "textMode": "value", "reduceOptions": {"calcs": ["lastNotNull"]}}
+    },
+    {
+      "id": 4, "type": "stat", "title": "Unmatched bounces",
+      "description": "Bounce/complaint emails that could not be tied to a message; waiting for an operator.",
+      "gridPos": {"h": 4, "w": 4, "x": 12, "y": 1},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "expr": "max(mailer_events_unreviewed)", "instant": true}],
+      "fieldConfig": {"defaults": {
+        "color": {"mode": "thresholds"},
+        "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}]}
+      }, "overrides": []},
+      "options": {"colorMode": "value", "graphMode": "none", "textMode": "value", "reduceOptions": {"calcs": ["lastNotNull"]}}
+    },
+    {
+      "id": 5, "type": "stat", "title": "Active pauses",
+      "description": "Every active pause, any scope (global, stream, domain, pool, campaign, API client).",
+      "gridPos": {"h": 4, "w": 4, "x": 16, "y": 1},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "expr": "sum(max by (scope) (mailer_pauses_active))", "instant": true}],
+      "fieldConfig": {"defaults": {
+        "color": {"mode": "thresholds"},
+        "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}]}
+      }, "overrides": []},
+      "options": {"colorMode": "value", "graphMode": "none", "textMode": "value", "reduceOptions": {"calcs": ["lastNotNull"]}}
+    },
+    {
+      "id": 6, "type": "stat", "title": "Last backup",
+      "description": "Age of the last successful Postgres backup. Pages above 26 hours.",
+      "gridPos": {"h": 4, "w": 4, "x": 20, "y": 1},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "expr": "time() - max(pgbackup_last_success_timestamp_seconds)", "instant": true}],
+      "fieldConfig": {"defaults": {
+        "unit": "s", "noValue": "never", "color": {"mode": "thresholds"},
+        "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 93600}]}
+      }, "overrides": []},
+      "options": {"colorMode": "value", "graphMode": "none", "textMode": "value", "reduceOptions": {"calcs": ["lastNotNull"]}}
+    },
+    {
+      "type": "row", "title": "Flow", "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 5}, "id": 101, "panels": []
+    },
+    {
+      "id": 7, "type": "timeseries", "title": "Jobs waiting, by state",
+      "description": "Recipient jobs not yet finished. A growing RENDERED line with no SUBMITTED means hand-off is stuck.",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 6},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "expr": "max by (state) (mailer_jobs)", "legendFormat": "{{state}}"}],
+      "fieldConfig": {"defaults": {
+        "unit": "short", "min": 0, "color": {"mode": "palette-classic"},
+        "custom": {"drawStyle": "line", "lineWidth": 2, "fillOpacity": 0, "showPoints": "never", "spanNulls": true}
+      }, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}}
+    },
+    {
+      "id": 8, "type": "timeseries", "title": "Hand-offs to the MTA in the last hour, by outcome",
+      "description": "Rolling one-hour count of SMTP submissions. A rising DEFERRED line is the MTA saying 4xx.",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 6},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "expr": "max by (outcome) (mailer_send_attempts_last_hour)", "legendFormat": "{{outcome}}"}],
+      "fieldConfig": {"defaults": {
+        "unit": "short", "min": 0, "color": {"mode": "palette-classic"},
+        "custom": {"drawStyle": "line", "lineWidth": 2, "fillOpacity": 0, "showPoints": "never", "spanNulls": true}
+      }, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}}
+    },
+    {
+      "id": 9, "type": "timeseries", "title": "Delivery events in the last hour, by type",
+      "description": "From the Postfix log, bounce/complaint emails and provider webhooks.",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 14},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "expr": "max by (type) (mailer_events_last_hour)", "legendFormat": "{{type}}"}],
+      "fieldConfig": {"defaults": {
+        "unit": "short", "min": 0, "color": {"mode": "palette-classic"},
+        "custom": {"drawStyle": "line", "lineWidth": 2, "fillOpacity": 0, "showPoints": "never", "spanNulls": true}
+      }, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}}
+    },
+    {
+      "id": 10, "type": "timeseries", "title": "Policy decisions in the last hour",
+      "description": "SEND / HOLD / SUPPRESS at the last check before hand-off. HOLD includes pauses, rate limits and warm-up.",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 14},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "expr": "max by (outcome) (mailer_policy_decisions_last_hour)", "legendFormat": "{{outcome}}"}],
+      "fieldConfig": {"defaults": {
+        "unit": "short", "min": 0, "color": {"mode": "palette-classic"},
+        "custom": {"drawStyle": "line", "lineWidth": 2, "fillOpacity": 0, "showPoints": "never", "spanNulls": true}
+      }, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}}
+    },
+    {
+      "type": "row", "title": "Infrastructure", "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 22}, "id": 102, "panels": []
+    },
+    {
+      "id": 11, "type": "timeseries", "title": "RabbitMQ ready messages, by queue",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 23},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "expr": "sum by (queue) (rabbitmq_detailed_queue_messages_ready{queue=~\"expand|render|deliver|events|maintenance\"})", "legendFormat": "{{queue}}"}],
+      "fieldConfig": {"defaults": {
+        "unit": "short", "min": 0, "color": {"mode": "palette-classic"},
+        "custom": {"drawStyle": "line", "lineWidth": 2, "fillOpacity": 0, "showPoints": "never", "spanNulls": true}
+      }, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}}
+    },
+    {
+      "id": 12, "type": "timeseries", "title": "Postfix queue, by queue and host",
+      "description": "Messages in Postfix's queues. A growing deferred queue means a provider is throttling or blocking us.",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 23},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "expr": "sum by (instance, queue) (postfix_showq_message_age_seconds_count)", "legendFormat": "{{instance}} {{queue}}"}],
+      "fieldConfig": {"defaults": {
+        "unit": "short", "min": 0, "color": {"mode": "palette-classic"},
+        "custom": {"drawStyle": "line", "lineWidth": 2, "fillOpacity": 0, "showPoints": "never", "spanNulls": true}
+      }, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}}
+    }
+  ]
+}

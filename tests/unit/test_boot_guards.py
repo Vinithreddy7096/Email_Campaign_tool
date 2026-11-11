@@ -10,6 +10,7 @@ instance running in mock mode would accept campaigns and deliver nothing.
 import os
 
 import pytest
+from cryptography.fernet import Fernet
 from django.core.exceptions import ImproperlyConfigured
 
 from config.settings import base
@@ -29,7 +30,40 @@ def prod(monkeypatch, tmp_path):
     monkeypatch.setattr(base, "ABUSE_CONTACT_EMAIL", "abuse@example.com")
     monkeypatch.setattr(base, "WEBHOOK_SIGNING_SECRET", "s" * 32)
     monkeypatch.setattr(base, "DKIM_KEY_DIR", str(keydir))
+    monkeypatch.setattr(base, "FIELD_ENCRYPTION_KEYS", [Fernet.generate_key().decode()])
+    monkeypatch.setattr(base, "MFA_ENFORCED", True)
+    monkeypatch.setattr(base, "MTA_INGEST_SECRET", "m" * 32)
+    monkeypatch.setattr(base, "METRICS_TOKEN", "p" * 32)
     return monkeypatch
+
+
+def test_the_fixture_config_boots(prod):
+    base.run_boot_guards("production")
+
+
+@pytest.mark.parametrize(("name", "value", "message"), [
+    ("MTA_INGEST_SECRET", "", "MTA_INGEST_SECRET"),
+    ("MTA_INGEST_SECRET", "s" * 32, "must differ"),  # same as WEBHOOK_SIGNING_SECRET
+    ("METRICS_TOKEN", "short", "METRICS_TOKEN"),
+])  # fmt: skip
+def test_production_requires_intake_and_metrics_secrets(prod, name, value, message):
+    prod.setattr(base, name, value)
+    with pytest.raises(ImproperlyConfigured, match=message):
+        base.run_boot_guards("production")
+
+
+def test_production_refuses_mfa_off(prod):
+    prod.setattr(base, "MFA_ENFORCED", False)
+    with pytest.raises(ImproperlyConfigured, match="MFA_ENFORCED"):
+        base.run_boot_guards("production")
+
+
+@pytest.mark.parametrize("keys", [[], ["not-a-fernet-key"]])
+def test_production_requires_valid_field_encryption_keys(prod, keys):
+    """Q-SEC-1: MFA secrets must not be encrypted under a SECRET_KEY-derived key."""
+    prod.setattr(base, "FIELD_ENCRYPTION_KEYS", keys)
+    with pytest.raises(ImproperlyConfigured, match="FIELD_ENCRYPTION_KEYS"):
+        base.run_boot_guards("production")
 
 
 def test_valid_production_config_boots(prod):
@@ -89,10 +123,10 @@ def test_production_reports_every_problem_at_once(prod):
     assert "BASE_URL" in message
 
 
-def test_production_rejects_missing_dkim_key_dir(prod):
+def test_app_nodes_need_no_dkim_keys(prod):
+    """OpenDKIM signs on the MTA hosts; app nodes should not hold private keys."""
     prod.setattr(base, "DKIM_KEY_DIR", "/nonexistent/opendkim/keys")
-    with pytest.raises(ImproperlyConfigured, match="DKIM_KEY_DIR does not exist"):
-        base.run_boot_guards("production")
+    base.run_boot_guards("production")
 
 
 @pytest.mark.skipif(os.name != "posix", reason="mode bits are not meaningful on Windows")

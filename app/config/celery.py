@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 
 from celery import Celery
+from celery.schedules import crontab
 from kombu import Exchange, Queue
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.local")
@@ -55,6 +56,37 @@ app.conf.update(
     task_track_started=True,
     timezone="UTC",
     enable_utc=True,
+    # Explicit: autodiscovery only finds a module literally named `tasks`.
+    imports=("workers.tasks.domains", "workers.tasks.delivery", "workers.tasks.events",
+             "workers.tasks.contacts"),
+    # Each pipeline stage on its own queue (§9.2), so a slow MTA cannot starve
+    # rendering or expansion.
+    task_routes={
+        "delivery.dispatch_due": {"queue": "expand"},
+        "delivery.expand": {"queue": "expand"},
+        "delivery.render": {"queue": "render"},
+        "delivery.handoff": {"queue": "deliver"},
+        "delivery.sweep": {"queue": "maintenance"},
+        "events.normalize_payload": {"queue": "events"},
+        "events.ingest_log_lines": {"queue": "events"},
+        "events.recompute_stats": {"queue": "maintenance"},
+        "contacts.process_import": {"queue": "maintenance"},
+        "contacts.resume_imports": {"queue": "maintenance"},
+    },
+    beat_schedule={
+        # DNS rarely changes, but a broken record must pause an ACTIVE domain
+        # within hours, not days. Interval is provisional (Q-DATA-1).
+        "dispatch-due-campaigns": {"task": "delivery.dispatch_due", "schedule": 60.0},
+        "delivery-sweep": {"task": "delivery.sweep", "schedule": 60.0},
+        # §10.8.3 per-campaign counters; also logs complaint/bounce-rate alerts.
+        "events-recompute-stats": {"task": "events.recompute_stats", "schedule": 300.0},
+        # Imports whose task was never published or whose worker died.
+        "contacts-resume-imports": {"task": "contacts.resume_imports", "schedule": 300.0},
+        "verify-sending-domains": {
+            "task": "domains.verify_all",
+            "schedule": crontab(minute=17, hour="*/6"),
+        },
+    },
 )
 
 app.autodiscover_tasks(["workers.tasks"])

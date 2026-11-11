@@ -1,0 +1,20 @@
+# Nightly Postgres backup. Install with its .timer on ONE host that can reach
+# the database and the bucket (e.g. the first app node):
+#   cp deploy/backup/email-platform-backup.{service,timer} /etc/systemd/system/
+#   systemctl enable --now email-platform-backup.timer
+# /etc/email-platform/backup.env (root, 0600) — see deploy/backup/backup.env.example.
+[Unit]
+Description=Email platform: Postgres backup to object storage
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/docker run --rm --name email-platform-backup \
+    --env-file /etc/email-platform/backup.env \
+    -v /var/lib/node_exporter/textfile:/metrics \
+    -e BACKUP_METRICS_FILE=/metrics/pgbackup.prom \
+    email-platform-backup:latest backup
+# A dump of a large database can take a while; never let two overlap.
+TimeoutStartSec=4h

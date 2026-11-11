@@ -1,0 +1,40 @@
+{% extends "console/base.html" %}
+{% load console %}
+{% block title %}Templates{% endblock %}
+
+{% block content %}
+<div class="phead">
+  <div><h1>Templates</h1><p class="sub">Each change is a new version. Only approved versions can be sent; a running campaign keeps the exact version it was approved with.</p></div>
+  <div class="actions">{% if perms.email_templates.add_emailtemplate %}<a class="btn primary" href="{% url 'console:template_new' %}">New template</a>{% else %}<button class="btn primary" disabled title="Needs the Campaign Manager role">New template</button>{% endif %}</div>
+</div>
+<div class="panel">
+  <header>
+    <nav class="seg" aria-label="Category">
+      <a href="?{% if query %}q={{ query|urlencode }}{% endif %}" {% if not category %}aria-current="true"{% endif %}>All</a>
+      {% for value, label in categories %}<a href="?c={{ value }}{% if query %}&q={{ query|urlencode }}{% endif %}" {% if category == value %}aria-current="true"{% endif %}>{{ label }}</a>{% endfor %}
+    </nav>
+    <form method="get">{% if category %}<input type="hidden" name="c" value="{{ category }}">{% endif %}<input type="search" name="q" value="{{ query }}" placeholder="Search by name or subject" aria-label="Search templates"></form>
+  </header>
+  {% if rows %}
+  <div class="tablewrap"><table>
+    <thead><tr><th>Template</th><th>Category</th><th>Live version</th><th>In progress</th><th>Owner</th><th>Updated</th></tr></thead>
+    <tbody>
+      {% for r in rows %}
+      {% with target=r.in_progress|default:r.live|default:r.newest %}
+      <tr class="link" {% if target %}data-href="{% url 'console:template_version' target.pk %}"{% endif %}>
+        <td>{% if target %}<a class="rowlink" href="{% url 'console:template_version' target.pk %}">{{ r.t.name }}</a>{% else %}<b>{{ r.t.name }}</b>{% endif %}{% if r.t.description %}<div class="small muted">{{ r.t.description }}</div>{% endif %}</td>
+        <td>{{ r.t.get_category_display }}</td>
+        <td>{% if r.live %}v{{ r.live.number }} {% pill r.live.status %}{% else %}<span class="muted">none</span>{% endif %}</td>
+        <td>{% if r.in_progress %}v{{ r.in_progress.number }} {% pill r.in_progress.status %}{% else %}<span class="muted">-</span>{% endif %}</td>
+        <td>{{ r.t.owner.email }}</td>
+        <td class="num small">{{ r.t.updated_at|date:"j M H:i" }}</td>
+      </tr>
+      {% endwith %}
+      {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+    <p class="empty">No templates{% if query %} match “{{ query }}”{% endif %}.</p>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,6 @@
+# {{ ansible_managed | default("Rendered from mta/opendkim/SigningTable.j2 — do not edit on the host") }}
+# Header From domain → key (refile: wildcards allowed). DMARC aligns on the
+# From domain, so that is what is signed.
+{% for s in mta_maps.signing %}
+*@{{ s.domain }} {{ s.selector }}._domainkey.{{ s.domain }}
+{% endfor %}

@@ -1,0 +1,60 @@
+# Prometheus for the email platform. Targets are listed in file_sd files under
+# /etc/prometheus/targets/ (production: written by the monitoring role; local:
+# monitoring/prometheus/targets.local/ via the compose "observability" profile),
+# so hosts change without editing this file.
+#
+# Secrets are files, never inline: /etc/prometheus/secrets/metrics_token holds
+# the app's METRICS_TOKEN.
+
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+  external_labels:
+    platform: email
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+alerting:
+  alertmanagers:
+    - file_sd_configs: [{files: [/etc/prometheus/targets/alertmanager.json]}]
+
+scrape_configs:
+  # The app's own pipeline metrics (common/metrics.py). Any one web instance
+  # reports the whole pipeline; scraping several is harmless.
+  - job_name: mailer
+    metrics_path: /metrics
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/secrets/metrics_token
+    scrape_interval: 60s
+    scrape_timeout: 20s
+    file_sd_configs: [{files: [/etc/prometheus/targets/mailer.json]}]
+
+  # RabbitMQ's built-in plugin (port 15692). Per-queue depth and consumers
+  # come from the detailed endpoint.
+  - job_name: rabbitmq
+    metrics_path: /metrics/detailed
+    params:
+      family: [queue_coarse_metrics, queue_consumer_count]
+    file_sd_configs: [{files: [/etc/prometheus/targets/rabbitmq.json]}]
+  - job_name: rabbitmq-node
+    metrics_path: /metrics
+    file_sd_configs: [{files: [/etc/prometheus/targets/rabbitmq.json]}]
+
+  - job_name: postgres           # prometheuscommunity/postgres-exporter :9187
+    file_sd_configs: [{files: [/etc/prometheus/targets/postgres.json]}]
+
+  - job_name: redis              # oliver006/redis_exporter :9121
+    file_sd_configs: [{files: [/etc/prometheus/targets/redis.json]}]
+
+  - job_name: postfix            # kumina/postfix_exporter :9154 on each MTA
+    file_sd_configs: [{files: [/etc/prometheus/targets/postfix.json]}]
+
+  # node_exporter :9100 on every host; its textfile collector also carries
+  # pgbackup_* from the backup host.
+  - job_name: node
+    file_sd_configs: [{files: [/etc/prometheus/targets/node.json]}]
+
+  - job_name: prometheus
+    static_configs: [{targets: [localhost:9090]}]

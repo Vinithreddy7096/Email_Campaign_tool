@@ -1,0 +1,53 @@
+/* Themes the stock Django admin with the console tokens (tokens.css).
+   Selector specificity (0,1,1) beats the admin's own :root and
+   html[data-theme] blocks, which load earlier. */
+html[data-theme], html:not([data-theme]) {
+  --primary: var(--accent);
+  --secondary: var(--accent);
+  --primary-fg: var(--surface);
+  --body-fg: var(--ink);
+  --body-bg: var(--bg);
+  --body-quiet-color: var(--muted);
+  --body-medium-color: var(--muted);
+  --body-loud-color: var(--ink);
+  --header-color: var(--muted);
+  --header-branding-color: var(--ink);
+  --header-bg: var(--surface);
+  --header-link-color: var(--muted);
+  --breadcrumbs-fg: var(--muted);
+  --breadcrumbs-link-fg: var(--accent);
+  --breadcrumbs-bg: var(--sunk);
+  --link-fg: var(--accent);
+  --link-hover-color: var(--ink);
+  --link-selected-fg: var(--accent);
+  --hairline-color: var(--line);
+  --border-color: var(--line);
+  --error-fg: var(--bad);
+  --message-success-bg: var(--ok-soft);
+  --message-warning-bg: var(--warn-soft);
+  --message-error-bg: var(--bad-soft);
+  --darkened-bg: var(--sunk);
+  --selected-bg: var(--accent-soft);
+  --selected-row: var(--accent-soft);
+  --button-fg: var(--surface);
+  --button-bg: var(--accent);
+  --button-hover-bg: var(--ink);
+  --default-button-bg: var(--accent);
+  --default-button-hover-bg: var(--ink);
+  --font-family-primary: var(--f-body);
+  --font-family-monospace: var(--f-mono);
+}
+/* --accent is deliberately not mapped: tokens.css loads after the admin's CSS,
+   so the admin's --accent already resolves to ours. Mapping it here would make
+   --primary (= var(--accent)) circular. */
+body.console-admin #header { border-bottom: 1px solid var(--line); }
+body.console-admin #site-name a { display: inline-flex; align-items: center; gap: 8px; font-family: var(--f-display); font-weight: 700; }
+body.console-admin #site-name svg { color: var(--primary); }
+body.console-admin #user-tools { text-transform: none; letter-spacing: 0; font-size: 12.5px; }
+body.console-admin .module { border: 1px solid var(--hairline-color); border-radius: 6px; }
+body.console-admin #content h1 { font-family: var(--f-display); font-weight: 700; letter-spacing: -0.01em; }
+body.console-admin .safety { display: grid; }
+body.console-admin .safety .safebar { display: flex; gap: 10px; align-items: center; padding: 6px 40px; color: #fff; font: 500 12.5px var(--f-body); }
+body.console-admin .safety .safebar b { font: 600 11px var(--f-mono); background: rgba(0,0,0,.22); padding: 1px 6px; border-radius: 3px; }
+body.console-admin .safety .mockbar { background: var(--mock); }
+body.console-admin .safety .killbar { background: #1f3a85; }

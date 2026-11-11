@@ -18,4 +18,5 @@ def environment_banner(request: HttpRequest) -> dict[str, Any]:
         "MOCK_MODE": settings.MOCK_MODE,
         "GLOBAL_SEND_ENABLED": settings.GLOBAL_SEND_ENABLED,
         "ENVIRONMENT": getattr(settings, "ENVIRONMENT", "unknown"),
+        "MFA_ENFORCED": settings.MFA_ENFORCED,
     }

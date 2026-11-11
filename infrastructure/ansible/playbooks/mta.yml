@@ -1,0 +1,25 @@
+# MTA hosts: OpenDKIM + Postfix (BUILD.md §10.10).
+#
+#   ansible-playbook -i inventories/staging playbooks/mta.yml --ask-vault-pass
+#   ansible-playbook -i inventories/production playbooks/mta.yml --ask-vault-pass --check --diff   # first
+#
+# Run from a machine OUTSIDE postfix_app_networks: the last step proves the
+# host refuses to relay for it (§12, §13 "automated open-relay test").
+- name: MTA hosts
+  hosts: mta
+  become: true
+  pre_tasks:
+    - name: Domain maps from the app (shared by both roles)
+      ansible.builtin.import_tasks: ../roles/postfix/tasks/maps.yml
+  roles:
+    - opendkim
+    - postfix
+  post_tasks:
+    - name: Not an open relay
+      ansible.builtin.command: >-
+        python3 {{ playbook_dir }}/../../../scripts/relay_test.py
+        --host {{ ansible_host | default(inventory_hostname) }}
+        --bounce-domain {{ mta_maps.bounce_domains[0] }}
+      delegate_to: localhost
+      become: false
+      changed_when: false

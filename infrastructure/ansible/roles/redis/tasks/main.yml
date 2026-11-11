@@ -1,0 +1,73 @@
+- name: Refuse a weak password
+  ansible.builtin.assert:
+    that: redis_password | length >= 32
+    fail_msg: redis_password (vault_redis_password) must be at least 32 characters.
+
+- name: Package
+  ansible.builtin.apt:
+    name: redis-server
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Kernel setting for background saves
+  when: redis_sysctl | bool
+  block:
+    - name: Persist it
+      ansible.builtin.copy:
+        dest: /etc/sysctl.d/60-redis.conf
+        mode: "0644"
+        content: "vm.overcommit_memory = 1\n"
+      register: redis_sysctl_file
+    - name: Apply it
+      ansible.builtin.command: sysctl -p /etc/sysctl.d/60-redis.conf
+      when: redis_sysctl_file.changed
+      changed_when: true
+
+- name: Our settings (holds the password)
+  ansible.builtin.copy:
+    dest: /etc/redis/email-platform.conf
+    owner: redis
+    group: redis
+    mode: "0640"
+    content: |
+      bind {{ redis_bind }}
+      protected-mode yes
+      port {{ redis_port }}
+      requirepass {{ redis_password }}
+      appendonly yes
+      appendfsync everysec
+      maxmemory {{ redis_maxmemory }}
+      maxmemory-policy {{ redis_maxmemory_policy }}
+      # Nobody should be able to wipe the counters by accident.
+      rename-command FLUSHALL ""
+      rename-command FLUSHDB ""
+      rename-command DEBUG ""
+  no_log: true
+  notify: Restart redis
+
+- name: Include our settings last (they override the packaged defaults)
+  ansible.builtin.lineinfile:
+    path: /etc/redis/redis.conf
+    line: include /etc/redis/email-platform.conf
+    insertafter: EOF
+  notify: Restart redis
+
+- name: Running
+  ansible.builtin.systemd:
+    name: redis-server
+    enabled: true
+    state: started
+
+- name: Apply now
+  ansible.builtin.meta: flush_handlers
+
+- name: Answers with the password, refuses without
+  ansible.builtin.shell: |
+    set -e
+    test "$(REDISCLI_AUTH='{{ redis_password }}' redis-cli -p {{ redis_port }} ping)" = PONG
+    redis-cli -p {{ redis_port }} ping 2>&1 | grep -q NOAUTH
+  args:
+    executable: /bin/bash
+  no_log: true
+  changed_when: false

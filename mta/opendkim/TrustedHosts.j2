@@ -1,0 +1,7 @@
+# {{ ansible_managed | default("Rendered from mta/opendkim/TrustedHosts.j2 — do not edit on the host") }}
+# Mail from these is signed (same networks Postfix lets relay).
+127.0.0.1
+::1
+{% for net in postfix_app_networks %}
+{{ net }}
+{% endfor %}

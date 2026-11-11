@@ -1,0 +1,17 @@
+# OpenDKIM role defaults.
+mta_source_dir: "{{ playbook_dir }}/../../../mta"
+
+opendkim_listen: inet:8891@127.0.0.1        # Postfix side: opendkim_socket in the postfix role
+opendkim_key_dir: /etc/opendkim/keys
+
+# Private keys, from the vault ONLY (spec §6 Secrets, §12) — never in Git:
+#
+#   vault_dkim_private_keys:
+#     news.example.com:
+#       s2026: |
+#         -----BEGIN PRIVATE KEY-----
+#         ...
+#
+# Every (domain, selector) in mta_maps.signing must have a key here, or the
+# role stops before touching the host.
+opendkim_private_keys: "{{ vault_dkim_private_keys | default({}) }}"

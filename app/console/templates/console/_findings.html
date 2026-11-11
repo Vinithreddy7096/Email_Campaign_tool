@@ -1,0 +1,6 @@
+{# findings: email_templates.preflight.Finding objects #}
+{% for f in findings %}
+  <div class="finding"><span class="lvl {{ f.level }}">{{ f.level }}</span><div><code>{{ f.code }}</code><p class="muted small">{{ f.message }}</p></div></div>
+{% empty %}
+  <div class="finding"><span class="lvl PASS">PASS</span><div>Unsubscribe link (marketing), no empty or unsafe links, size limits, plain-text part, no line breaks in the subject — all pass for the sample data.</div></div>
+{% endfor %}

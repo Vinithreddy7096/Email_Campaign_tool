@@ -1,0 +1,53 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<p>
+  <strong>{{ version.template.name }}</strong> v{{ version.number }}
+  ({{ version.template.get_category_display }}) &middot; {{ version.get_status_display }}
+  &middot; checksum <code>{{ version.checksum|truncatechars:15 }}</code>
+  &middot; <a href="{% url 'admin:email_templates_templateversion_change' version.pk %}">Edit/details</a>
+</p>
+{% if version.review_note %}<p><strong>Review note:</strong> {{ version.review_note }}</p>{% endif %}
+
+<h2>Preflight</h2>
+{% if findings %}
+<table>
+  <thead><tr><th>Level</th><th>Check</th><th>Detail</th></tr></thead>
+  <tbody>
+  {% for f in findings %}
+    <tr><td>{{ f.level }}</td><td><code>{{ f.code }}</code></td><td>{{ f.message }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>All checks passed.</p>
+{% endif %}
+
+<h2>Preview (sample data)</h2>
+{% if render_error %}
+<p class="errornote">{{ render_error }}</p>
+{% elif rendered %}
+<p><strong>Subject:</strong> {{ rendered.subject }}</p>
+<div style="display:flex; gap:16px; flex-wrap:wrap">
+  <div style="flex:1 1 480px">
+    <h3>HTML</h3>
+    <iframe sandbox="" srcdoc="{{ rendered.html }}" title="HTML preview"
+            style="width:100%; height:600px; border:1px solid #ccc; background:#fff"></iframe>
+  </div>
+  <div style="flex:1 1 320px">
+    <h3>Text</h3>
+    <pre style="white-space:pre-wrap; border:1px solid #ccc; padding:8px; max-height:600px; overflow:auto">{{ rendered.text }}</pre>
+  </div>
+</div>
+{% endif %}
+
+{% if can_review %}
+<h2>Decision</h2>
+<form method="post">{% csrf_token %}
+  <p><label for="note">Note (required to reject or request changes)</label><br>
+     <textarea id="note" name="note" rows="3" cols="80"></textarea></p>
+  <button type="submit" name="decision" value="approve" {% if has_failures %}disabled{% endif %}>Approve</button>
+  <button type="submit" name="decision" value="request_changes">Request changes</button>
+  <button type="submit" name="decision" value="reject">Reject</button>
+</form>
+{% endif %}
+{% endblock %}

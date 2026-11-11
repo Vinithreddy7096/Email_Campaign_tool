@@ -1,0 +1,15 @@
+{# The recipient-facing unsubscribe card. Used by the real page (/u/<token>) and #}
+{# the console preview, so the preview is exactly what recipients see.         #}
+{% if state == "confirm" %}
+  <h1>Stop marketing email?</h1>
+  <p>You'll stop getting newsletters and offers from us. Receipts, password resets and other account messages still arrive.</p>
+  <form method="post" {% if preview %}onsubmit="return false"{% endif %}><button class="btn primary" type="submit">Unsubscribe</button></form>
+  <p class="small muted">One click is enough — you won't be asked to sign in.</p>
+{% elif state == "done" %}
+  <h1>You're unsubscribed</h1>
+  <p>You won't get marketing email from us from now on. If one is already on its way, it was sent before you clicked.</p>
+  <p class="small muted">Visiting this link again changes nothing.</p>
+{% else %}
+  <h1>This link isn't valid</h1>
+  <p>The unsubscribe link may be incomplete. Copy the whole link from the email, or reply to the message and ask to be removed.</p>
+{% endif %}

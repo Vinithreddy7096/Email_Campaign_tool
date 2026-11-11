@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<head>
+{% include "console/_head.html" %}
+<title>{% block title %}Email Platform{% endblock %}</title>
+</head>
+<body class="public">
+{# Pages people outside the operator team see (unsubscribe), plus sign-in and MFA. #}
+{# No navigation and no operator state — only the [MOCK] bar, which §5.3 requires. #}
+{% include "console/_safety.html" %}
+<main>
+  <div class="unsub">
+    {% block card %}{% endblock %}
+  </div>
+</main>
+</body>
+</html>

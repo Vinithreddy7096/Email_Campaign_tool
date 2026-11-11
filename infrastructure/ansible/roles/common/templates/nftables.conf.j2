@@ -1,0 +1,32 @@
+#!/usr/sbin/nft -f
+# {{ ansible_managed | default("Managed by Ansible (roles/common)") }}
+flush ruleset
+
+table inet filter {
+  chain input {
+    type filter hook input priority 0; policy drop;
+    ct state established,related accept
+    ct state invalid drop
+    iif lo accept
+    ip protocol icmp accept
+    ip6 nexthdr icmpv6 accept
+
+    # SSH from the admin networks only.
+    ip saddr { {{ firewall_admin_networks | join(", ") }} } tcp dport 22 accept
+{% for rule in firewall_allow %}
+    # {{ rule.comment | default("") }}
+{% if rule.sources | default([]) %}
+    ip saddr { {{ rule.sources | join(", ") }} } {{ rule.proto | default("tcp") }} dport {{ rule.port }} accept
+{% else %}
+    {{ rule.proto | default("tcp") }} dport {{ rule.port }} accept
+{% endif %}
+{% endfor %}
+  }
+  chain forward {
+    type filter hook forward priority 0; policy drop;
+    # Docker (app/monitoring hosts) manages its own forwarding chains.
+  }
+  chain output {
+    type filter hook output priority 0; policy accept;
+  }
+}

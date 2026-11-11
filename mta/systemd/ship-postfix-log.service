@@ -1,0 +1,33 @@
+# Installed by infrastructure/ansible/roles/postfix to /etc/systemd/system/.
+[Unit]
+Description=Forward Postfix delivery-status lines to the email platform
+After=network-online.target postfix.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/ship-postfix-log
+User=mtaship
+# Primary group: the one allowed to read /etc/email-platform/mta-intake.env.
+Group=mtaintake
+# Reads the journal; nothing else.
+SupplementaryGroups=systemd-journal
+StateDirectory=ship-postfix-log
+Environment=SHIP_STATE_DIR=/var/lib/ship-postfix-log
+Restart=always
+RestartSec=5
+# EX_CONFIG: a missing secret will not fix itself by restarting.
+RestartPreventExitStatus=78
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadOnlyPaths=/etc/email-platform
+
+[Install]
+WantedBy=multi-user.target

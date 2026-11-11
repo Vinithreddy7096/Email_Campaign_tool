@@ -1,0 +1,218 @@
+# Alerts for the email platform. severity: page (wake someone) | ticket (next
+# working day). Every alert links its runbook section in docs/runbooks.md.
+# Unit tests: monitoring/prometheus/tests/mailer.rules.test.yml (promtool, CI).
+
+groups:
+  # ─── Delivery pipeline (app metrics, common/metrics.py) ────────────────
+  - name: mailer-pipeline
+    rules:
+      - alert: MailerMetricsDown
+        expr: up{job="mailer"} == 0
+        for: 5m
+        labels: {severity: page}
+        annotations:
+          summary: "The app's /metrics is unreachable on {{ $labels.instance }}"
+          description: "Either the web process is down or METRICS_TOKEN does not match. Pipeline alerts are blind meanwhile."
+          runbook: docs/runbooks.md#app-down
+
+      - alert: HandoffBacklog
+        expr: mailer_handoff_lag_seconds > 900
+        for: 10m
+        labels: {severity: page}
+        annotations:
+          summary: "Mail due for hand-off has waited {{ $value | humanizeDuration }}"
+          description: "Deliver workers are down, stuck or too few, or the MTA is refusing connections."
+          runbook: docs/runbooks.md#handoff-backlog
+
+      - alert: RenderBacklog
+        expr: mailer_render_lag_seconds > 900
+        for: 10m
+        labels: {severity: ticket}
+        annotations:
+          summary: "A queued job has waited {{ $value | humanizeDuration }} to be rendered"
+          runbook: docs/runbooks.md#handoff-backlog
+
+      - alert: PeriodicTaskStopped
+        expr: >-
+          (time() - mailer_task_last_run_timestamp_seconds{task="delivery.sweep"} > 300)
+          or (time() - mailer_task_last_run_timestamp_seconds{task="events.recompute_stats"} > 1200)
+        for: 5m
+        labels: {severity: page}
+        annotations:
+          summary: "Periodic task {{ $labels.task }} has not run recently"
+          description: "Celery beat or the maintenance/deliver worker is down: retries, held mail and campaign completion stop."
+          runbook: docs/runbooks.md#beat-stopped
+
+      - alert: JobsNeedReview
+        expr: mailer_jobs_review_required > 0
+        for: 15m
+        labels: {severity: ticket}
+        annotations:
+          summary: "{{ $value }} job(s) flagged for an operator"
+          description: "Lost SMTP replies or render failures (Q-DEL-1: held, never resent). Resolve on the console."
+          runbook: docs/runbooks.md#jobs-need-review
+
+      - alert: SubmissionDeferralsHigh
+        expr: >-
+          mailer_send_attempts_last_hour{outcome="DEFERRED"}
+          / ignoring(outcome) sum without(outcome) (mailer_send_attempts_last_hour) > 0.2
+          and ignoring(outcome) sum without(outcome) (mailer_send_attempts_last_hour) > 100
+        for: 15m
+        labels: {severity: page}
+        annotations:
+          summary: "{{ $value | humanizePercentage }} of hand-offs to the MTA were deferred in the last hour"
+          description: "The MTA is answering 4xx or timing out: check Postfix, OpenDKIM (milter tempfail) and disk."
+          runbook: docs/runbooks.md#mta-deferring
+
+      - alert: ComplaintRateOverThreshold
+        expr: mailer_campaign_rate_alerts{kind="complaint"} > 0
+        labels: {severity: page}
+        annotations:
+          summary: "{{ $value }} campaign(s) over COMPLAINT_RATE_ALERT_THRESHOLD"
+          description: "Q-EVT-2 default is alert only — nothing pauses automatically. Decide whether to pause."
+          runbook: docs/runbooks.md#complaint-spike
+
+      - alert: HardBounceRateOverThreshold
+        expr: mailer_campaign_rate_alerts{kind="hard-bounce"} > 0
+        labels: {severity: ticket}
+        annotations:
+          summary: "{{ $value }} campaign(s) over HARD_BOUNCE_RATE_ALERT_THRESHOLD"
+          runbook: docs/runbooks.md#complaint-spike
+
+      - alert: UnrecognisedBouncesWaiting
+        expr: mailer_events_unreviewed > 0
+        for: 1h
+        labels: {severity: ticket}
+        annotations:
+          summary: "{{ $value }} bounce/complaint message(s) could not be matched and wait for review"
+          runbook: docs/runbooks.md#unrecognised-bounces
+
+      - alert: SendingDomainPaused
+        expr: mailer_sending_domains{status="PAUSED"} > 0
+        for: 5m
+        labels: {severity: page}
+        annotations:
+          summary: "{{ $value }} sending domain(s) paused (DNS check failed)"
+          description: "Mail from that domain is held. Fix SPF/DKIM/DMARC, then reactivate."
+          runbook: docs/runbooks.md#domain-paused
+
+      - alert: SendingPausedEverywhere
+        expr: mailer_pauses_active{scope="GLOBAL"} > 0
+        for: 1h
+        labels: {severity: ticket}
+        annotations:
+          summary: "All sending has been paused for over an hour"
+          description: "Intended? Held mail expires after MESSAGE_MAX_AGE_HOURS."
+          runbook: docs/runbooks.md#pause-everything
+
+      - alert: SendingWithoutRateLimits
+        expr: mailer_global_send_enabled == 1 and mailer_rate_limits_configured == 0
+        for: 10m
+        labels: {severity: ticket}
+        annotations:
+          summary: "Sending is enabled with no rate limits configured (Q-POL-1)"
+          runbook: docs/runbooks.md#rate-limits
+
+  # ─── Infrastructure ────────────────────────────────────────────────────
+  - name: mailer-infrastructure
+    rules:
+      - alert: QueueBacklog
+        expr: rabbitmq_detailed_queue_messages_ready{queue=~"expand|render|deliver|events|maintenance"} > 20000
+        for: 15m
+        labels: {severity: ticket}
+        annotations:
+          summary: "RabbitMQ queue {{ $labels.queue }} has {{ $value }} ready messages"
+          runbook: docs/runbooks.md#handoff-backlog
+
+      - alert: QueueHasNoConsumer
+        expr: rabbitmq_detailed_queue_consumers{queue=~"expand|render|deliver|events|maintenance"} == 0
+        for: 5m
+        labels: {severity: page}
+        annotations:
+          summary: "No worker is consuming the {{ $labels.queue }} queue"
+          runbook: docs/runbooks.md#handoff-backlog
+
+      - alert: RabbitMQResourceAlarm
+        expr: rabbitmq_alarms_memory_used_watermark == 1 or rabbitmq_alarms_free_disk_space_watermark == 1
+        for: 2m
+        labels: {severity: page}
+        annotations:
+          summary: "RabbitMQ {{ $labels.instance }} hit a memory/disk alarm: publishers are blocked"
+          runbook: docs/runbooks.md#rabbitmq-alarm
+
+      - alert: PostgresDown
+        expr: pg_up == 0
+        for: 2m
+        labels: {severity: page}
+        annotations:
+          summary: "Postgres {{ $labels.instance }} is unreachable"
+          runbook: docs/runbooks.md#restore
+
+      - alert: PostgresConnectionsHigh
+        expr: sum by (instance) (pg_stat_activity_count) / on(instance) pg_settings_max_connections > 0.8
+        for: 10m
+        labels: {severity: ticket}
+        annotations:
+          summary: "Postgres {{ $labels.instance }} is using {{ $value | humanizePercentage }} of max_connections"
+
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 2m
+        labels: {severity: page}
+        annotations:
+          summary: "Redis {{ $labels.instance }} is down: rate limits hold all mail while it is (fail closed)"
+          runbook: docs/runbooks.md#redis-down
+
+      - alert: PostfixDeferredQueueLarge
+        expr: sum by (instance) (postfix_showq_message_age_seconds_count{queue="deferred"}) > 5000
+        for: 30m
+        labels: {severity: ticket}
+        annotations:
+          summary: "Postfix on {{ $labels.instance }} has {{ $value }} deferred messages"
+          description: "A provider is throttling or blocking us. Check `postqueue -p` and the blocklists."
+          runbook: docs/runbooks.md#ip-blocklisted
+
+      - alert: PostfixExporterDown
+        expr: up{job="postfix"} == 0
+        for: 5m
+        labels: {severity: ticket}
+        annotations:
+          summary: "No Postfix metrics from {{ $labels.instance }}"
+
+      - alert: DiskAlmostFull
+        expr: >-
+          node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"}
+          / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs"} < 0.10
+        for: 15m
+        labels: {severity: page}
+        annotations:
+          summary: "{{ $labels.instance }} {{ $labels.mountpoint }} has under 10% free"
+
+  # ─── Backups (scripts/backup/pgbackup.py via node_exporter textfile) ───
+  - name: mailer-backups
+    rules:
+      - alert: BackupMissing
+        expr: absent(pgbackup_last_success_timestamp_seconds)
+        for: 1h
+        labels: {severity: page}
+        annotations:
+          summary: "No backup has ever reported success"
+          runbook: docs/runbooks.md#restore
+
+      - alert: BackupStale
+        expr: time() - pgbackup_last_success_timestamp_seconds > 26 * 3600
+        labels: {severity: page}
+        annotations:
+          summary: "The last successful backup was {{ $value | humanizeDuration }} ago"
+          runbook: docs/runbooks.md#restore
+
+      - alert: RestoreTestStale
+        expr: >-
+          absent(pgbackup_restore_check_last_success_timestamp_seconds)
+          or time() - pgbackup_restore_check_last_success_timestamp_seconds > 8 * 86400
+        for: 1h
+        labels: {severity: ticket}
+        annotations:
+          summary: "No successful restore test in over a week"
+          description: "An untested backup is not a backup."
+          runbook: docs/runbooks.md#restore

@@ -1,0 +1,31 @@
+{% extends "admin/base.html" %}
+{% load static %}
+{# Themes the stock admin with the console's tokens and adds the §5.3 safety bars, #}
+{# which the stock admin does not show. The console is the main UI; the admin is   #}
+{# for low-level edits.                                                             #}
+
+{% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | Email Platform admin{% endblock %}
+
+{% block extrastyle %}{{ block.super }}
+<link rel="stylesheet" href="{% static 'console/tokens.css' %}">
+<link rel="stylesheet" href="{% static 'console/admin-theme.css' %}">
+{% endblock %}
+
+{% block bodyclass %}{{ block.super }} console-admin{% endblock %}
+
+{% block header %}
+  <div class="safety" role="status">
+    {% if MOCK_MODE %}<div class="safebar mockbar"><b>[MOCK]</b><span>{{ ENVIRONMENT }} — all outbound SMTP is routed to the local sink. Nothing reaches the internet.</span></div>{% endif %}
+    {% if not GLOBAL_SEND_ENABLED %}<div class="safebar killbar"><b>SENDING OFF</b><span>Sending is globally disabled (GLOBAL_SEND_ENABLED=false). No worker may hand off to an MTA.</span></div>{% endif %}
+  </div>
+  {{ block.super }}
+{% endblock %}
+
+{% block branding %}
+<div id="site-name"><a href="{% url 'admin:index' %}">{% include "console/_brand.svg.html" %}Email Platform admin</a></div>
+{% if user.is_anonymous %}{% include "admin/color_theme_toggle.html" %}{% endif %}
+{% endblock %}
+
+{% block userlinks %}<a href="{% url 'console:today' %}">Console</a> / {{ block.super }}{% endblock %}
+
+{% block nav-global %}{% endblock %}

@@ -1,0 +1,39 @@
+{% extends "console/base.html" %}
+{% load console %}
+{% block title %}Campaigns{% endblock %}
+
+{% block content %}
+<div class="phead">
+  <div><h1>Campaigns</h1><p class="sub">Creating a campaign never sends. It sends only after preflight passes, an approver signs off, and it is scheduled on an active domain.</p></div>
+  <div class="actions">{% if perms.campaigns.add_campaign %}<a class="btn primary" href="{% url 'console:campaign_new' %}">New campaign</a>{% else %}<button class="btn primary" disabled title="Needs the Campaign Manager role">New campaign</button>{% endif %}</div>
+</div>
+<div class="panel">
+  <header>
+    <nav class="seg" aria-label="Filter">{% for t in tabs %}<a href="?f={{ t.key }}{% if query %}&q={{ query|urlencode }}{% endif %}" {% if t.current %}aria-current="true"{% endif %}>{{ t.label }} {{ t.count }}</a>{% endfor %}</nav>
+    <form method="get"><input type="hidden" name="f" value="{% for t in tabs %}{% if t.current %}{{ t.key }}{% endif %}{% endfor %}"><input type="search" name="q" value="{{ query }}" placeholder="Search campaigns" aria-label="Search campaigns"></form>
+  </header>
+  {% if campaigns %}
+  <div class="tablewrap"><table>
+    <thead><tr><th>Name</th><th>Status</th><th>Template</th><th>Sender</th><th class="r">Eligible</th><th class="r">Suppressed</th><th>Schedule</th><th>Owner</th></tr></thead>
+    <tbody>
+      {% for c in campaigns %}
+      <tr class="link" data-href="{% url 'console:campaign' c.pk %}">
+        <td><a class="rowlink" href="{% url 'console:campaign' c.pk %}">{{ c.name }}</a></td>
+        <td>{% pill c.status %}</td>
+        <td>{{ c.template_version.template.name }} v{{ c.template_version.number }}</td>
+        <td class="mono small">{{ c.sender_identity.from_address }}</td>
+        {% with a=c.preflight_report.audience %}
+        <td class="r num">{% if a %}{{ a.recipients|num }}{% else %}<span class="muted">-</span>{% endif %}</td>
+        <td class="r num">{% if a %}{{ a.excluded_suppressed|num }}{% else %}<span class="muted">-</span>{% endif %}</td>
+        {% endwith %}
+        <td class="num">{% if c.status == "CANCELED" %}<span class="muted">canceled {{ c.canceled_at|date:"j M" }}</span>{% elif c.scheduled_at %}{{ c.scheduled_at|date:"j M H:i" }}{% else %}<span class="muted">not set</span>{% endif %}</td>
+        <td>{{ c.owner.email }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+    <p class="empty">No campaigns{% if query %} match “{{ query }}”{% endif %}.</p>
+  {% endif %}
+</div>
+{% endblock %}

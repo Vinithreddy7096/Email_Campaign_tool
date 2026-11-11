@@ -1,0 +1,23 @@
+# Baseline for every host.
+
+common_packages: [acl, ca-certificates, curl, gnupg, chrony, unattended-upgrades, python3]
+
+# Firewall (nftables): default deny inbound; SSH from the admin networks;
+# each host group adds its own ports in group_vars (firewall_allow).
+common_firewall: true
+firewall_admin_networks: [10.0.0.0/8]
+# - {port: 5432, proto: tcp, sources: [10.10.0.0/24], comment: postgres from app}
+firewall_allow: []
+
+common_ssh_hardening: true
+
+# journald: keep logs across reboots, bounded.
+journald_max_use: 2G
+
+# node_exporter on every host (Prometheus job "node").
+node_exporter_version: 1.8.2
+node_exporter_listen: ":9100"
+node_exporter_textfile_dir: /var/lib/node_exporter/textfile
+
+# Ship the journal to Loki with Grafana Alloy. Empty: no log shipping.
+loki_push_url: ""            # e.g. http://mon1.internal:3100/loki/api/v1/push

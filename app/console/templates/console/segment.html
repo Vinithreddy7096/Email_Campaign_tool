@@ -1,0 +1,61 @@
+{% extends "console/base.html" %}
+{% load console %}
+{% block title %}{% if segment %}{{ segment.name }}{% else %}New segment{% endif %}{% endblock %}
+
+{% block content %}
+<div class="phead">
+  <div>
+    <p class="crumb"><a href="{% url 'console:audience' %}">Contacts and consent</a> / {{ lst.name }} / {% if segment %}{{ segment.name }}{% else %}New segment{% endif %}</p>
+    <h1>{% if segment %}{{ segment.name }}{% else %}New segment{% endif %}</h1>
+    <p class="sub">A saved filter over list “{{ lst.name }}”. It only narrows the list: consent and suppression are still checked on everyone it selects.</p>
+  </div>
+</div>
+{% if segment %}
+{% if stats.error %}
+<div class="note bad"><b>These rules are invalid</b>, so campaigns using this segment fail preflight: {{ stats.error }}</div>
+{% else %}
+<div class="tiles">
+  <div class="tile"><span class="k">Selected</span><span class="v">{{ stats.members|num }}</span><span class="d">of {{ stats.list_members|num }} list members</span></div>
+  <div class="tile"><span class="k">With consent</span><span class="v">{% if stats.consented is None %}—{% else %}{{ stats.consented|num }}{% endif %}</span><span class="d">{% if lst.stream == "MARKETING" %}{% if stats.consented is None %}too many to count here{% else %}same rule as preflight{% endif %}{% else %}n/a (transactional){% endif %}</span></div>
+</div>
+{% endif %}
+{% endif %}
+<div class="grid split">
+  <div class="panel">
+    <header><h2>Rules</h2></header>
+    <form method="post" class="body">{% csrf_token %}
+      <input type="hidden" name="list" value="{{ lst.pk }}">
+      {% include "console/_form_fields.html" %}
+      <div class="actions">
+        {% if segment %}{% if perms.contacts.change_segment %}<button class="btn primary" type="submit">Save</button>{% endif %}{% else %}<button class="btn primary" type="submit">Create segment</button>{% endif %}
+        <a class="btn" href="{% url 'console:audience' %}">Back</a>
+      </div>
+    </form>
+  </div>
+  <div class="stack">
+    <div class="note">
+      <b>Rule language</b> (provisional — the spec does not define one yet)
+      <pre class="mono small">{"all": [ … ]}   every rule matches
+{"any": [ … ]}   at least one matches
+{"not": rule}    rule does not match
+{"field": …, "op": …, "value": …}</pre>
+      <dl class="kv small">
+        <dt><code>first_name</code>, <code>last_name</code></dt><dd>eq ne in not_in contains starts_with exists</dd>
+        <dt><code>email_domain</code></dt><dd>eq ne in not_in</dd>
+        <dt><code>attributes.&lt;key&gt;</code></dt><dd>as names, plus gt gte lt lte for numbers</dd>
+        <dt><code>created_at</code>, <code>consent_granted_at</code></dt><dd>before after (ISO date)</dd>
+        <dt><code>list</code></dt><dd>in not_in (list ids)</dd>
+      </dl>
+      Text comparisons ignore case. <code>exists</code> takes <code>true</code>/<code>false</code>.
+    </div>
+    {% if segment %}
+    <div class="panel">
+      <header><h2>Campaigns using it</h2></header>
+      {% if campaigns %}<ul class="body small">{% for c in campaigns %}<li><a href="{% url 'console:campaign' c.pk %}">{{ c.name }}</a> {% pill c.status c.get_status_display %}</li>{% endfor %}</ul>
+      {% else %}<p class="empty">None.</p>{% endif %}
+      <p class="body small muted">Editing the rules changes who an unapproved campaign would reach. An approved campaign keeps the recipients frozen in its snapshot.</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

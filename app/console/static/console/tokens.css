@@ -1,0 +1,32 @@
+/* Design tokens — from docs/design/console-mockup.html. Loaded by the console,
+   the public pages and the themed Django admin. Variables only. */
+:root {
+  --bg: #f3f5f8;
+  --surface: #ffffff;
+  --sunk: #eaeef3;
+  --ink: #17212c;
+  --muted: #5a6776;
+  --line: #d9dfe7;
+  --accent: #2a5ba3;
+  --accent-soft: #e3ebf7;
+  --ok: #1d7a4c;   --ok-soft: #dff2e8;
+  --warn: #9a640a; --warn-soft: #fbefd8;
+  --bad: #b2352d;  --bad-soft: #f8e1df;
+  --idle: #6b7684; --idle-soft: #e8ecf0;
+  --mock: #a8460c;
+  --f-display: "Schibsted Grotesk", "Helvetica Neue", Arial, sans-serif;
+  --f-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --r: 6px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0e1319; --surface: #151c24; --sunk: #1b232d; --ink: #e2e8ef; --muted: #94a1b0; --line: #29343f;
+  --accent: #82a9e6; --accent-soft: #1d2a3d;
+  --ok: #55c391; --ok-soft: #15301f; --warn: #e2ab4c; --warn-soft: #33270f; --bad: #f07d72; --bad-soft: #3a1c1a; --idle: #9aa5b2; --idle-soft: #232c36;
+  color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #0e1319; --surface: #151c24; --sunk: #1b232d; --ink: #e2e8ef; --muted: #94a1b0; --line: #29343f;
+  --accent: #82a9e6; --accent-soft: #1d2a3d;
+  --ok: #55c391; --ok-soft: #15301f; --warn: #e2ab4c; --warn-soft: #33270f; --bad: #f07d72; --bad-soft: #3a1c1a; --idle: #9aa5b2; --idle-soft: #232c36;
+  color-scheme: dark; }

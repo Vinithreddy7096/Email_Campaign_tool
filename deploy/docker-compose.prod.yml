@@ -1,0 +1,97 @@
+# App node (staging/production). Postgres, RabbitMQ, Redis and Postfix are NOT
+# here: they run on their own hosts (infrastructure/ansible) and are reached via
+# DATABASE_URL, RABBITMQ_URL, REDIS_URL and MTA_SMTP_HOST in the env file.
+#
+#   export IMAGE=registry.example.com/email-platform:<git-sha>
+#   docker compose -f deploy/docker-compose.prod.yml run --rm migrate      # once per release
+#   docker compose -f deploy/docker-compose.prod.yml up -d
+#
+# The env file holds secrets: root-owned, mode 0600, never in Git. It must set
+# DJANGO_SETTINGS_MODULE=config.settings.production (or .staging). Its
+# DATABASE_URL is the unprivileged APP role; the owner's credentials live only in
+# /etc/email-platform/migrate.env (MIGRATE_DATABASE_URL, DB_APP_ROLE).
+#
+# Run `beat` on exactly ONE node in the whole deployment (BEAT_REPLICAS=0 elsewhere):
+# two schedulers would run every periodic task twice.
+
+x-app: &app
+  image: ${IMAGE:?set IMAGE to the release image}
+  env_file: [/etc/email-platform/app.env]
+  restart: unless-stopped
+  read_only: true
+  tmpfs: [/tmp]
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: [ALL]
+  logging:
+    driver: json-file
+    options: {max-size: "50m", max-file: "5"}
+
+x-worker: &worker
+  <<: *app
+  # Celery has no HTTP port; the image HEALTHCHECK is for the web process.
+  healthcheck: {disable: true}
+  # Let a task in progress finish (an SMTP hand-off can take MTA_SUBMISSION_TIMEOUT_S).
+  stop_grace_period: 120s
+
+services:
+  web:
+    <<: *app
+    # Bound to loopback: only the host's nginx (deploy/nginx.conf) reaches it.
+    ports: ["127.0.0.1:8000:8000"]
+    environment:
+      # Docker NATs nginx's loopback connection, so the source is the bridge
+      # gateway; only nginx can connect at all (the port is loopback-only).
+      GUNICORN_FORWARDED_ALLOW_IPS: "*"
+
+  worker-expand:
+    <<: *worker
+    command: ["celery", "-A", "config", "worker", "-Q", "expand", "-c", "2", "-n", "expand@%h",
+              "-O", "fair", "--max-tasks-per-child", "1000", "--without-gossip"]
+
+  worker-render:
+    <<: *worker
+    command: ["celery", "-A", "config", "worker", "-Q", "render", "-c", "${RENDER_CONCURRENCY:-8}",
+              "-n", "render@%h", "-O", "fair", "--max-tasks-per-child", "1000", "--without-gossip"]
+
+  worker-deliver:
+    <<: *worker
+    command: ["celery", "-A", "config", "worker", "-Q", "deliver", "-c", "${DELIVER_CONCURRENCY:-16}",
+              "-n", "deliver@%h", "-O", "fair", "--max-tasks-per-child", "1000", "--without-gossip"]
+
+  worker-events:
+    <<: *worker
+    command: ["celery", "-A", "config", "worker", "-Q", "events", "-c", "4", "-n", "events@%h",
+              "-O", "fair", "--max-tasks-per-child", "1000", "--without-gossip"]
+
+  worker-maintenance:
+    <<: *worker
+    command: ["celery", "-A", "config", "worker", "-Q", "maintenance", "-c", "2", "-n", "maintenance@%h",
+              "-O", "fair", "--max-tasks-per-child", "1000", "--without-gossip"]
+
+  beat:
+    <<: *worker
+    deploy: {replicas: "${BEAT_REPLICAS:-1}"}
+    # Schedule state in /tmp (tmpfs): the schedule lives in code, nothing to keep.
+    command: ["celery", "-A", "config", "beat", "--loglevel", "INFO",
+              "--schedule", "/tmp/celerybeat-schedule"]
+
+  # One-off: `docker compose -f deploy/docker-compose.prod.yml run --rm migrate`
+  # Two database roles (docs/DEPLOYMENT.md "Database roles"): migrations run as
+  # the table OWNER from migrate.env, which only this container reads; then the
+  # app role is granted least privilege, and `check --deploy` (as the app role,
+  # DATABASE_URL from app.env) fails if that role could bypass the append-only
+  # rules (common.W010).
+  migrate:
+    <<: *app
+    env_file: [/etc/email-platform/app.env, /etc/email-platform/migrate.env]
+    restart: "no"
+    profiles: ["ops"]
+    healthcheck: {disable: true}
+    command:
+      - sh
+      - -c
+      - >-
+        : "$${MIGRATE_DATABASE_URL:?set in migrate.env}" "$${DB_APP_ROLE:?set in migrate.env}" &&
+        DATABASE_URL="$$MIGRATE_DATABASE_URL" python manage.py migrate --noinput &&
+        DATABASE_URL="$$MIGRATE_DATABASE_URL" python manage.py db_grants --apply --app-role "$$DB_APP_ROLE" &&
+        python manage.py check --deploy --fail-level WARNING

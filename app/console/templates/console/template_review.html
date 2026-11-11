@@ -1,0 +1,102 @@
+{% extends "console/base.html" %}
+{% load console %}
+{% block title %}Review {{ v.template.name }} v{{ v.number }}{% endblock %}
+
+{% block content %}
+<div class="phead">
+  <div>
+    <p class="crumb"><a href="{% url 'console:templates' %}">Templates</a> / {{ v.template.name }}</p>
+    <h1>{% if v.status == "PENDING_APPROVAL" %}Review {% endif %}{{ v.template.name }} · v{{ v.number }}</h1>
+    <p class="sub">{{ v.template.get_category_display }}{% if v.submitted_by %} · submitted by {{ v.submitted_by.email }} {{ v.submitted_at|date:"j M H:i" }}{% endif %} · checksum <code>{{ v.checksum|truncatechars:13 }}</code></p>
+  </div>
+  <div class="actions">
+    {% pill v.status %}
+    {% if v.status != "DRAFT" and perms.email_templates.add_templateversion %}
+      <form method="post">{% csrf_token %}<button class="btn" name="action" value="new_version">New draft from this version</button></form>
+    {% endif %}
+    {% if v.status == "DRAFT" %}<a class="btn" href="{% url 'console:template_version' v.pk %}">Edit draft</a>{% endif %}
+  </div>
+</div>
+<ol class="steps" aria-label="Version status">
+  <li class="{% if v.status == 'DRAFT' %}now{% else %}done{% endif %}">Draft</li>
+  <li class="{% if v.status == 'PENDING_APPROVAL' %}now{% elif v.status == 'REJECTED' or v.status == 'CHANGES_REQUESTED' %}fail{% elif v.status == 'APPROVED' or v.status == 'RETIRED' %}done{% endif %}">Pending approval</li>
+  <li class="{% if v.status == 'APPROVED' %}now{% elif v.status == 'RETIRED' %}done{% endif %}">Approved</li>
+  <li class="{% if v.status == 'RETIRED' %}now{% endif %}">Retired</li>
+</ol>
+{% if v.review_note %}<div class="note {% if v.status == 'APPROVED' %}ok{% else %}warn{% endif %}"><b>Review note from {{ v.reviewed_by.email }}:</b> {{ v.review_note }}</div>{% endif %}
+
+<div class="grid split">
+  <div class="panel">
+    <header>
+      <h2>Preview with sample data</h2>
+      <div class="seg" role="group" aria-label="Preview size"><button type="button" aria-pressed="true" data-w="wide">Desktop</button><button type="button" aria-pressed="false" data-w="narrow">Phone</button><button type="button" aria-pressed="false" data-w="text">Text</button></div>
+    </header>
+    <div class="body">
+      {% if render_error %}
+        <div class="note bad">{{ render_error }}</div>
+      {% else %}
+        <dl class="kv small"><dt>Subject</dt><dd><b>{{ rendered.subject }}</b></dd></dl>
+        <div class="preview" id="pv-html">
+          {# sandbox="" — no scripts, no same-origin access. srcdoc is auto-escaped. #}
+          <iframe sandbox="" srcdoc="{{ rendered.html }}" title="HTML preview"></iframe>
+        </div>
+        <pre class="text" id="pv-text" hidden>{{ rendered.text }}</pre>
+        <p class="small muted">Rendered in a sandboxed frame: no scripts, no same-origin access. The unsubscribe link is a placeholder here.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="stack">
+    <div class="panel">
+      <header><h2>Preflight</h2><span class="pill {% if fails %}bad{% elif warns %}warn{% else %}ok{% endif %}">{{ fails }} fail · {{ warns }} warn</span></header>
+      <div class="body flush">{% include "console/_findings.html" %}</div>
+    </div>
+    {% if changes %}
+    <div class="panel">
+      <header><h2>Changes from v{{ previous.number }}</h2></header>
+      <div class="body small"><dl class="kv">{% for label, what in changes %}<dt>{{ label }}</dt><dd>{{ what }}</dd>{% endfor %}</dl></div>
+    </div>
+    {% endif %}
+    <div class="panel">
+      <header><h2>Decision</h2><span class="muted small">needs approve permission</span></header>
+      <form method="post" class="body">{% csrf_token %}
+        {% if can_review %}
+          <label class="field" for="rv-note"><span>Note (required to reject or request changes)</span><textarea id="rv-note" name="note" rows="3"></textarea></label>
+          <div class="actions">
+            <button class="btn primary" name="action" value="approve" {% if fails %}disabled title="Fix the FAIL findings first"{% endif %}>Approve</button>
+            <button class="btn" name="action" value="request_changes">Request changes</button>
+            <button class="btn danger" name="action" value="reject">Reject</button>
+          </div>
+          <p class="small muted">Preflight runs again on approval. Approve is disabled while any check fails.</p>
+        {% elif v.status == "APPROVED" %}
+          <p class="small">Approved{% if v.reviewed_by %} by <b>{{ v.reviewed_by.email }}</b> {{ v.reviewed_at|date:"j M H:i" }}{% endif %}. Campaigns can use it.</p>
+          {% if perms.email_templates.approve_templateversion %}
+            <label class="field" for="rt-note"><span>Retire note</span><input id="rt-note" name="note" type="text" placeholder="Why stop new use?"></label>
+            <div class="actions"><button class="btn danger" name="action" value="retire">Retire (stop new use)</button></div>
+            <p class="small muted">Campaigns already approved with this version keep it.</p>
+          {% endif %}
+        {% elif v.status == "PENDING_APPROVAL" %}
+          <div class="actions"><button class="btn primary" disabled>Approve</button><span class="small muted">Needs the Approver role</span></div>
+        {% else %}
+          <p class="small muted">Nothing to decide: this version is {{ v.get_status_display|lower }}.</p>
+        {% endif %}
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.querySelectorAll('.seg [data-w]').forEach(function (b) {
+  b.addEventListener('click', function () {
+    b.parentElement.querySelectorAll('button').forEach(function (x) { x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); });
+    var html = document.getElementById('pv-html'), text = document.getElementById('pv-text');
+    if (!html) return;
+    html.hidden = b.dataset.w === 'text';
+    text.hidden = b.dataset.w !== 'text';
+    html.classList.toggle('narrow', b.dataset.w === 'narrow');
+  });
+});
+</script>
+{% endblock %}

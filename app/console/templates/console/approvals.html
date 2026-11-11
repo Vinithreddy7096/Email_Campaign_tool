@@ -1,0 +1,44 @@
+{% extends "console/base.html" %}
+{% load console %}
+{% block title %}Approvals{% endblock %}
+
+{% block content %}
+<div class="phead">
+  <div><h1>Approvals</h1><p class="sub">Template versions and campaigns waiting for an approver. Approving re-runs preflight first.</p></div>
+  <div class="actions">{% if not perms.email_templates.approve_templateversion and not perms.campaigns.approve_campaign %}<span class="tag">view only — needs the Approver role</span>{% endif %}</div>
+</div>
+<div class="panel">
+  <header><h2>Template versions</h2><span class="muted small">{{ versions|length }} pending</span></header>
+  {% if versions %}
+  <div class="tablewrap"><table>
+    <thead><tr><th>Version</th><th>Category</th><th>Submitted by</th><th>Submitted</th><th>Preflight</th></tr></thead>
+    <tbody>{% for v in versions %}
+      <tr class="link" data-href="{% url 'console:template_review' v.pk %}">
+        <td><a class="rowlink" href="{% url 'console:template_review' v.pk %}">{{ v.template.name }} v{{ v.number }}</a></td>
+        <td>{{ v.template.get_category_display }}</td>
+        <td>{{ v.submitted_by.email }}</td>
+        <td class="num small">{{ v.submitted_at|date:"j M H:i" }}</td>
+        <td>{% with n=v.preflight_report|length %}{% if n %}<span class="pill warn">{{ n }} finding{{ n|pluralize }}</span>{% else %}<span class="pill ok">clean</span>{% endif %}{% endwith %}</td>
+      </tr>{% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}<p class="empty">No template versions waiting.</p>{% endif %}
+</div>
+<div class="panel">
+  <header><h2>Campaigns</h2><span class="muted small">{{ campaigns|length }} ready for review</span></header>
+  {% if campaigns %}
+  <div class="tablewrap"><table>
+    <thead><tr><th>Campaign</th><th>Owner</th><th>Template</th><th class="r">Recipients</th><th>Submitted</th></tr></thead>
+    <tbody>{% for c in campaigns %}
+      <tr class="link" data-href="{% url 'console:campaign' c.pk %}">
+        <td><a class="rowlink" href="{% url 'console:campaign' c.pk %}">{{ c.name }}</a></td>
+        <td>{{ c.owner.email }}</td>
+        <td>{{ c.template_version.template.name }} v{{ c.template_version.number }}</td>
+        <td class="r num">{{ c.preflight_report.audience.recipients|num }}</td>
+        <td class="num small">{{ c.submitted_at|date:"j M H:i" }}</td>
+      </tr>{% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}<p class="empty">No campaigns waiting.</p>{% endif %}
+</div>
+{% endblock %}

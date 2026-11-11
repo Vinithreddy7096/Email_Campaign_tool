@@ -1,0 +1,158 @@
+{% extends "console/base.html" %}
+{% load console %}
+{% block title %}Sending controls{% endblock %}
+
+{% block content %}
+<div class="phead">
+  <div><h1>Sending controls</h1><p class="sub">An emergency pause holds new hand-offs to the mail server at the next policy check. Messages it already accepted still complete. Nothing queued is lost; resuming releases it.</p></div>
+</div>
+
+<div class="panel">
+  <header><h2>All sending</h2>
+    {% if perms.delivery.add_sendpause %}
+      {% if global_pause %}
+        <form method="post">{% csrf_token %}<input type="hidden" name="pause" value="{{ global_pause.pk }}"><button class="btn primary" name="action" value="resume">Resume sending</button></form>
+      {% else %}
+        <button class="btn danger solid" type="button" data-confirm-open="kill-confirm">Pause all sending</button>
+      {% endif %}
+    {% else %}<button class="btn danger solid" disabled title="Needs the System Administrator role">Pause all sending</button>{% endif %}
+  </header>
+  <div class="body">
+    <form method="post" class="confirm" id="kill-confirm" hidden>{% csrf_token %}
+      <input type="hidden" name="scope" value="GLOBAL"><input type="hidden" name="target" value="">
+      <b>Pause every campaign, API client and route?</b>
+      <p class="small">{{ held|num }} queued job{{ held|pluralize }} will be held. Nothing is lost; resume releases them.</p>
+      <label class="field" for="kill-reason"><span>Reason (kept in the audit log)</span><input id="kill-reason" name="reason" type="text" required placeholder="e.g. Complaint spike on outlook.com"></label>
+      <div class="actions"><button class="btn danger solid" name="action" value="pause">Pause all sending</button><button class="btn" type="button" data-confirm-close>Keep sending</button></div>
+    </form>
+    {% if global_pause %}
+      <div class="note bad"><b>Paused</b> {{ global_pause.created_at|date:"j M H:i" }} by {{ global_pause.created_by.email|default:global_pause.created_by_label }}: {{ global_pause.reason }}. {{ held|num }} job{{ held|pluralize }} held.</div>
+    {% else %}
+      <p class="small muted">Running.{% if last_global %} Last paused {{ last_global.created_at|date:"j M Y H:i" }} by {{ last_global.created_by.email|default:last_global.created_by_label }}, resumed {{ last_global.lifted_at|date:"j M H:i" }}.{% endif %}</p>
+    {% endif %}
+    {% if not GLOBAL_SEND_ENABLED %}<div class="note">Separately, <code>GLOBAL_SEND_ENABLED</code> is false in the configuration, so no worker hands anything to the mail server regardless of these switches.</div>{% endif %}
+  </div>
+</div>
+
+<div class="grid g2">
+  <div class="panel">
+    <header><h2>Pauses</h2><span class="muted small">stream, domain, pool, API client</span></header>
+    <div class="switches">
+      {% for s in switches %}
+        <div class="switch"><div class="what"><b>{{ s.name }}</b><span>{{ s.detail }}{% if s.pause %} · paused: {{ s.pause.reason }}{% endif %}</span></div>
+          <form method="post" class="actions">{% csrf_token %}
+            {% if s.pause %}
+              <span class="pill bad">Paused</span>
+              {% if perms.delivery.add_sendpause %}<input type="hidden" name="pause" value="{{ s.pause.pk }}"><button class="btn" name="action" value="resume">Resume</button>{% endif %}
+            {% elif s.status == "PAUSED" %}
+              <span class="pill bad" title="Paused by the DNS checker; reactivate in the admin once DNS is fixed">Held · DNS</span>
+            {% elif perms.delivery.add_sendpause %}
+              <input type="hidden" name="scope" value="{{ s.scope }}"><input type="hidden" name="target" value="{{ s.target }}">
+              <button class="btn" name="action" value="pause">Pause</button>
+            {% endif %}
+          </form>
+        </div>
+      {% empty %}<p class="empty">Nothing to pause yet.</p>{% endfor %}
+    </div>
+  </div>
+  <div class="panel">
+    <header><h2>Rate limits</h2>{% if perms.delivery.add_ratelimit %}<button class="btn" type="button" data-confirm-open="limit-form">Add limit</button>{% else %}<button class="btn" disabled title="Needs the System Administrator role">Add limit</button>{% endif %}</header>
+    <div class="body">
+      {% if not limits %}<div class="note warn"><b>No limits are configured.</b> Instance, campaign, domain, provider, IP pool and API client limits all apply nothing until someone decides them. Do not start production traffic before this is decided. <span class="q">Q-POL-1</span></div>{% endif %}
+      {% if held_by_limits %}<div class="note">{{ held_by_limits|num }} job{{ held_by_limits|pluralize }} waiting for room under a limit; each has its own slot, so the backlog drains at the limit's pace.</div>{% endif %}
+      {% if perms.delivery.add_ratelimit %}
+      <form method="post" class="confirm" id="limit-form" hidden>{% csrf_token %}
+        <b>Add a rate limit</b>
+        <div class="formrow">
+          <label class="field"><span>Scope</span>{{ limit_form.scope }}</label>
+          <label class="field"><span>{{ limit_form.target.label }}</span>{{ limit_form.target }}</label>
+        </div>
+        <div class="formrow">
+          <label class="field"><span>{{ limit_form.max_messages.label }}</span>{{ limit_form.max_messages }}</label>
+          <label class="field"><span>{{ limit_form.per.label }}</span>{{ limit_form.per }}</label>
+        </div>
+        <div class="formrow">
+          <label class="field"><span>{{ limit_form.provider.label }}</span>{{ limit_form.provider }}<span class="hint">{{ limit_form.provider.help_text }}</span></label>
+          <label class="field"><span>{{ limit_form.provider_domains.label }}</span>{{ limit_form.provider_domains }}<span class="hint">{{ limit_form.provider_domains.help_text }}</span></label>
+        </div>
+        <label class="field"><span>{{ limit_form.note.label }}</span>{{ limit_form.note }}</label>
+        <p class="small muted">Applies from the next hand-off. Messages over the limit are held, never dropped.</p>
+        <div class="actions"><button class="btn primary" name="action" value="add_limit">Add limit</button><button class="btn" type="button" data-confirm-close>Cancel</button></div>
+      </form>
+      {% endif %}
+      <div class="tablewrap"><table class="small">
+        <thead><tr><th>Applies to</th><th class="r">Max</th><th>Per</th><th>Why</th><th></th></tr></thead>
+        <tbody>
+        {% for l in limits %}
+          <tr><td><b>{{ l.row.get_scope_display }}</b><br><span class="muted">{% if l.row.scope == "TENANT" %}everything{% elif l.target %}{{ l.target }}{% if l.row.recipient_domains %} ({{ l.row.recipient_domains|join:", " }}){% endif %}{% else %}each one separately{% endif %}</span></td>
+            <td class="num">{{ l.row.max_messages|num }}</td><td>{% with s=l.row.per_seconds %}{% if s == 1 %}second{% elif s == 60 %}minute{% elif s == 3600 %}hour{% elif s == 86400 %}day{% else %}{{ s }} s{% endif %}{% endwith %}</td>
+            <td class="muted">{{ l.row.note|default:"—" }}<br>{{ l.row.created_by.email|default:"" }} · {{ l.row.created_at|date:"j M" }}</td>
+            <td>{% if perms.delivery.change_ratelimit %}<form method="post">{% csrf_token %}<input type="hidden" name="limit" value="{{ l.row.pk }}"><button class="btn" name="action" value="disable_limit">Remove</button></form>{% endif %}</td></tr>
+        {% empty %}<tr><td colspan="5" class="muted">No limits yet.</td></tr>{% endfor %}
+        </tbody>
+      </table></div>
+    </div>
+  </div>
+</div>
+
+<div class="panel">
+  <header><h2>Warm-up</h2>{% if perms.delivery.add_warmupplan %}<button class="btn" type="button" data-confirm-open="warmup-form">Add plan</button>{% endif %}</header>
+  <div class="body">
+    <p class="small muted">A new domain or IP pool sends at most the day's number; the rest waits for the next day. Scheduling refuses a campaign that warm-up cannot send before its jobs expire.</p>
+    {% if not plans %}<div class="note warn"><b>No warm-up plans.</b> New domains and IP pools send at full speed. The volumes are an open decision. <span class="q">Q-POL-1</span></div>{% endif %}
+    {% if perms.delivery.add_warmupplan %}
+    <form method="post" class="confirm" id="warmup-form" hidden>{% csrf_token %}
+      <b>Add a warm-up plan</b>
+      <div class="formrow">
+        <label class="field"><span>{{ warmup_form.target.label }}</span>{{ warmup_form.target }}</label>
+        <label class="field"><span>{{ warmup_form.started_on.label }}</span>{{ warmup_form.started_on }}</label>
+      </div>
+      <label class="field"><span>{{ warmup_form.daily_limits.label }}</span>{{ warmup_form.daily_limits }}<span class="hint">{{ warmup_form.daily_limits.help_text }}</span></label>
+      <div class="formrow">
+        <label class="field"><span>{{ warmup_form.provider_domains.label }}</span>{{ warmup_form.provider_domains }}<span class="hint">{{ warmup_form.provider_domains.help_text }}</span></label>
+        <label class="field"><span>{{ warmup_form.note.label }}</span>{{ warmup_form.note }}</label>
+      </div>
+      <div class="actions"><button class="btn primary" name="action" value="add_warmup">Add plan</button><button class="btn" type="button" data-confirm-close>Cancel</button></div>
+    </form>
+    {% endif %}
+    {% if plans %}
+    <div class="tablewrap"><table class="small">
+      <thead><tr><th>Route</th><th>Progress</th><th class="r">Today</th><th>Ramp</th><th></th></tr></thead>
+      <tbody>
+      {% for p in plans %}
+        <tr><td><b>{{ p.target }}</b>{% if p.row.recipient_domains %}<br><span class="muted">only to {{ p.row.recipient_domains|join:", " }}</span>{% endif %}</td>
+          <td>{% if p.finished %}<span class="pill ok">Finished</span>{% elif p.allowed == 0 %}<span class="pill">Starts {{ p.row.started_on|date:"j M" }}</span>{% else %}<span class="pill warn">{{ p.state }}</span>{% endif %}</td>
+          <td class="num">{% if p.allowed %}{% if p.used is None %}?{% else %}{{ p.used|num }}{% endif %} / {{ p.allowed|num }}{% else %}—{% endif %}</td>
+          <td class="mono small">{{ p.row.daily_limits|join:" → " }}</td>
+          <td>{% if perms.delivery.change_warmupplan %}<form method="post">{% csrf_token %}<input type="hidden" name="plan" value="{{ p.row.pk }}"><button class="btn" name="action" value="disable_warmup">Remove</button></form>{% endif %}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    {% endif %}
+  </div>
+</div>
+
+{% if active %}
+<div class="panel">
+  <header><h2>Every active pause · {{ active|length }}</h2><span class="muted small">including campaign pauses</span></header>
+  <div class="tablewrap"><table class="small">
+    <thead><tr><th>Scope</th><th>Target</th><th>Reason</th><th>By</th><th>Since</th></tr></thead>
+    <tbody>{% for p in active %}<tr><td>{{ p.get_scope_display }}</td><td class="mono">{{ p.target|default:"—"|truncatechars:24 }}</td><td>{{ p.reason }}</td><td>{{ p.created_by.email|default:p.created_by_label }}</td><td class="num">{{ p.created_at|date:"j M H:i" }}</td></tr>{% endfor %}</tbody>
+  </table></div>
+</div>
+{% endif %}
+
+<div class="panel">
+  <header><h2>Open decisions that affect sending</h2><span class="muted small">from BUILD.md §10.12; each has a safe default</span></header>
+  <div class="tablewrap"><table class="small">
+    <thead><tr><th>ID</th><th>Question</th><th>Default until answered</th></tr></thead>
+    <tbody>
+      <tr><td><span class="q">Q-POL-1</span></td><td>Rate limits and warm-up volumes</td><td>Enforced when configured above; none are built in</td></tr>
+      <tr><td><span class="q">Q-EVT-2</span></td><td>Complaint-rate alert and auto-pause thresholds</td><td>Alert only, no auto-pause</td></tr>
+      <tr><td><span class="q">Q-CMP-1</span></td><td>What counts as high volume for mandatory approval</td><td>All campaigns need approval</td></tr>
+      <tr><td><span class="q">Q-DEL-1</span></td><td>Lost SMTP reply after DATA: hold or resend</td><td>Hold for review</td></tr>
+      <tr><td><span class="q">Q-TPL-1</span></td><td>What a marketing footer must contain</td><td>Only the unsubscribe link is required</td></tr>
+    </tbody>
+  </table></div>
+</div>
+{% endblock %}

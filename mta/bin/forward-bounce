@@ -1,0 +1,111 @@
+#!/usr/bin/env python3
+"""Postfix pipe(8) target for the bounce / FBL domains (mta/postfix/master.cf.j2).
+
+Reads one message on stdin, signs it and POSTs it to the app's event intake
+(POST /api/v1/events/mail). Python 3 standard library only: the MTA hosts run
+no application code.
+
+Exit status is what Postfix acts on:
+  0   recorded (or can never be accepted — logged, then dropped)
+  75  EX_TEMPFAIL: the app is unreachable or refused us; Postfix keeps the
+      message in its queue and retries, so nothing is lost.
+
+Configuration: /etc/email-platform/mta-intake.env (KEY=VALUE, mode 0640,
+group = the pipe user), overridable by environment variables:
+  INTAKE_URL          https://app.internal.example.com   (no trailing path)
+  MTA_INGEST_SECRET   shared with the app's MTA_INGEST_SECRET
+  INTAKE_CA_FILE      optional CA bundle for a private CA
+"""
+
+from __future__ import annotations
+
+import hashlib
+import hmac
+import os
+import ssl
+import sys
+import time
+import urllib.error
+import urllib.request
+
+CONFIG_FILE = "/etc/email-platform/mta-intake.env"
+# Just under the app's DATA_UPLOAD_MAX_MEMORY_SIZE (2.5 MB). The DSN / ARF
+# report parts come first, so a cut-off copy of the original still parses.
+MAX_BYTES = 2_400_000
+EX_OK, EX_TEMPFAIL = 0, 75
+
+
+def load_config(path: str = CONFIG_FILE) -> dict[str, str]:
+    config: dict[str, str] = {}
+    try:
+        with open(path, encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, _, value = line.partition("=")
+                    config[key.strip()] = value.strip().strip('"').strip("'")
+    except FileNotFoundError:
+        pass
+    for key in ("INTAKE_URL", "MTA_INGEST_SECRET", "INTAKE_CA_FILE"):
+        if os.environ.get(key):
+            config[key] = os.environ[key]
+    return config
+
+
+def sign(secret: str, body: bytes, timestamp: str | None = None) -> dict[str, str]:
+    timestamp = timestamp or str(int(time.time()))
+    signature = hmac.new(
+        secret.encode(), timestamp.encode() + b"." + body, hashlib.sha256
+    ).hexdigest()
+    return {"X-Webhook-Timestamp": timestamp, "X-Webhook-Signature": signature}
+
+
+def post(
+    config: dict[str, str], path: str, body: bytes, content_type: str, timeout: float = 20
+) -> int:
+    url = config["INTAKE_URL"].rstrip("/") + path
+    if not url.startswith(("https://", "http://")):
+        raise ValueError(f"INTAKE_URL must be http(s): {url}")
+    request = urllib.request.Request(  # noqa: S310 — scheme checked above
+        url,
+        data=body,
+        method="POST",
+        headers={"Content-Type": content_type, **sign(config["MTA_INGEST_SECRET"], body)},
+    )
+    context = ssl.create_default_context(cafile=config.get("INTAKE_CA_FILE") or None)
+    try:
+        with urllib.request.urlopen(request, timeout=timeout, context=context) as response:  # noqa: S310
+            return int(response.status)
+    except urllib.error.HTTPError as exc:
+        return int(exc.code)
+
+
+def main() -> int:
+    config = load_config()
+    if not config.get("INTAKE_URL") or not config.get("MTA_INGEST_SECRET"):
+        print("forward-bounce: INTAKE_URL / MTA_INGEST_SECRET not configured", file=sys.stderr)
+        return EX_TEMPFAIL
+    raw = sys.stdin.buffer.read(MAX_BYTES + 1)
+    if len(raw) > MAX_BYTES:
+        print(
+            f"forward-bounce: message over {MAX_BYTES} bytes, sending the first part",
+            file=sys.stderr,
+        )
+        raw = raw[:MAX_BYTES]
+    try:
+        status = post(config, "/api/v1/events/mail", raw, "message/rfc822")
+    except (OSError, ValueError, urllib.error.URLError) as exc:
+        print(f"forward-bounce: intake unreachable, will retry: {exc}", file=sys.stderr)
+        return EX_TEMPFAIL
+    if 200 <= status < 300:
+        return EX_OK
+    if status in (400, 413):
+        # Empty or malformed: retrying cannot help.
+        print(f"forward-bounce: intake refused the message ({status}); dropped", file=sys.stderr)
+        return EX_OK
+    print(f"forward-bounce: intake answered {status}, will retry", file=sys.stderr)
+    return EX_TEMPFAIL
+
+
+if __name__ == "__main__":
+    sys.exit(main())

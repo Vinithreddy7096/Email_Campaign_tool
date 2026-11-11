@@ -1,10 +1,23 @@
 .venv
 .git
+.github
 .mypy_cache
 .pytest_cache
 .ruff_cache
 __pycache__
+*.pyc
 build
 *.egg-info
 docs
 tests
+staticfiles
+app/staticfiles
+
+# Secrets must never be baked into an image.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+mta/opendkim/keys
+backups

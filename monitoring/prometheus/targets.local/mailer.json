@@ -1,0 +1,1 @@
+[{"targets": ["web:8000"], "labels": {"env": "local"}}]

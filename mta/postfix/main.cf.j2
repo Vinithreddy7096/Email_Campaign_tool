@@ -1,0 +1,110 @@
+# {{ ansible_managed | default("Rendered from mta/postfix/main.cf.j2 — do not edit on the host") }}
+#
+# Outbound MTA for the email platform (BUILD.md §10.10, spec §6, §7, §12).
+#   - Accepts submissions ONLY from the app networks (no open relay).
+#   - Routes each stream to its own transport, bound to that stream's pool IP.
+#   - Signs everything with OpenDKIM; if the signer is down, mail waits (tempfail).
+#   - Accepts mail for our bounce domains and pipes it to the event intake.
+
+compatibility_level = 3.6
+
+# ─── Identity ────────────────────────────────────────────────────────────
+myhostname = {{ postfix_hostname }}
+mydomain = {{ postfix_mydomain }}
+myorigin = $myhostname
+# Local delivery only for this host's own name (postmaster, root).
+mydestination = $myhostname, localhost.$mydomain, localhost
+alias_maps = hash:/etc/aliases
+alias_database = hash:/etc/aliases
+smtpd_banner = $myhostname ESMTP
+biff = no
+append_dot_mydomain = no
+readme_directory = no
+
+inet_interfaces = {{ postfix_inet_interfaces | join(", ") }}
+inet_protocols = {{ postfix_inet_protocols }}
+
+# ─── Who may send through us ─────────────────────────────────────────────
+# The app/worker networks only. Nothing else may relay, ever (§12).
+mynetworks = 127.0.0.0/8 [::1]/128{% for net in postfix_app_networks %} {{ net }}{% endfor %}
+
+smtpd_helo_required = yes
+disable_vrfy_command = yes
+strict_rfc821_envelopes = yes
+smtpd_relay_restrictions = permit_mynetworks, reject_unauth_destination
+smtpd_recipient_restrictions =
+    reject_non_fqdn_recipient,
+    reject_unlisted_recipient,
+    permit_mynetworks,
+    reject_unauth_destination
+smtpd_data_restrictions = reject_unauth_pipelining
+
+# Inbound abuse limits (the bounce MX is public).
+smtpd_client_connection_rate_limit = {{ postfix_inbound_connection_rate_limit }}
+smtpd_client_message_rate_limit = {{ postfix_inbound_message_rate_limit }}
+anvil_rate_time_unit = 60s
+message_size_limit = {{ postfix_message_size_limit }}
+
+# ─── Bounce and FBL intake ───────────────────────────────────────────────
+# Mail for these domains is accepted from anyone and piped to the app
+# (mta/bin/forward-bounce). VERP local parts are dynamic, so any recipient is
+# accepted; the app acts only on signed VERP addresses (§10.8).
+relay_domains = {{ mta_maps.bounce_domains | join(", ") }}
+relay_recipient_maps =
+transport_maps = hash:/etc/postfix/transport
+
+# ─── Streams ─────────────────────────────────────────────────────────────
+# The envelope sender (our VERP address at the stream's return-path domain)
+# picks the transport, and each transport binds its stream's IP (§10.1, §10.3).
+# Mail from any other sender is refused, not sent from whichever IP is handy.
+sender_dependent_default_transport_maps = hash:/etc/postfix/sender_transport
+default_transport = error:5.7.1 no stream is configured for this sender
+{% for stream in postfix_streams %}
+{% if stream.destination_concurrency_limit is defined %}
+{{ stream.name }}_destination_concurrency_limit = {{ stream.destination_concurrency_limit }}
+{% endif %}
+{% if stream.destination_rate_delay is defined %}
+{{ stream.name }}_destination_rate_delay = {{ stream.destination_rate_delay }}
+{% endif %}
+{% endfor %}
+# Per-destination (≈ per-provider) limits above are Q-POL-1; unset means
+# Postfix's defaults.
+
+# ─── Queue (Q-DEL-2) ─────────────────────────────────────────────────────
+maximal_queue_lifetime = {{ postfix_maximal_queue_lifetime }}
+bounce_queue_lifetime = {{ postfix_bounce_queue_lifetime }}
+notify_classes = resource, software
+
+# ─── DKIM signing (OpenDKIM milter) ──────────────────────────────────────
+# tempfail: if OpenDKIM is down, mail waits in the queue rather than going
+# out unsigned.
+milter_protocol = 6
+milter_default_action = tempfail
+smtpd_milters = {{ opendkim_socket }}
+non_smtpd_milters = $smtpd_milters
+
+# ─── TLS ─────────────────────────────────────────────────────────────────
+# Outbound: opportunistic and logged (spec §7 baseline).
+smtp_tls_security_level = may
+smtp_tls_loglevel = 1
+smtp_tls_CAfile = /etc/ssl/certs/ca-certificates.crt
+smtp_tls_session_cache_database = btree:${data_directory}/smtp_scache
+smtp_tls_protocols = !SSLv2, !SSLv3, !TLSv1, !TLSv1.1
+# Inbound (bounce MX and app submission).
+smtpd_tls_security_level = may
+smtpd_tls_cert_file = {{ postfix_tls_cert_file }}
+smtpd_tls_key_file = {{ postfix_tls_key_file }}
+smtpd_tls_loglevel = 1
+smtpd_tls_received_header = yes
+smtpd_tls_session_cache_database = btree:${data_directory}/smtpd_scache
+smtpd_tls_protocols = !SSLv2, !SSLv3, !TLSv1, !TLSv1.1
+
+# Logs go to journald; mta/bin/ship-postfix-log forwards delivery-status
+# lines to the app (§10.8.1).
+{% if postfix_sink_mode %}
+
+# ─── STAGING SINK ────────────────────────────────────────────────────────
+# Every outbound message goes to the sink, never to a real recipient (§6.2):
+# see the "*" entry in /etc/postfix/transport, which wins over the stream
+# routes above.
+{% endif %}

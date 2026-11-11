@@ -3,9 +3,13 @@
 
 import os
 import sys
+from pathlib import Path
 
 
 def main() -> None:
+    # The repo root holds top-level apps too (email_templates), and workers/.
+    # The Dockerfile puts it on PYTHONPATH; this does the same when run directly.
+    sys.path.insert(1, str(Path(__file__).resolve().parents[1]))
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.local")
     try:
         from django.core.management import execute_from_command_line

@@ -1,0 +1,75 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<p>
+  <strong>{{ campaign.name }}</strong> ({{ campaign.get_purpose_display }})
+  &middot; {{ campaign.get_status_display }}
+  &middot; from <code>{{ campaign.sender_identity.from_address }}</code>
+  &middot; template {{ campaign.template_version }}
+  &middot; list {{ campaign.audience_list }}{% if campaign.audience_segment %} &middot; segment {{ campaign.audience_segment.name }}{% endif %}
+  &middot; <a href="{% url 'admin:campaigns_campaign_change' campaign.pk %}">Edit/details</a>
+</p>
+{% if campaign.review_note %}<p><strong>Review note:</strong> {{ campaign.review_note }}</p>{% endif %}
+
+{% if not findings and not audience %}
+<p>No preflight has run yet. Use the <em>Submit for review</em> action.</p>
+{% else %}
+<h2>Audience</h2>
+<table>
+  <tr><th>List members</th><td>{{ audience.total }}</td></tr>
+  <tr><th>Excluded (suppressed)</th><td>{{ audience.excluded_suppressed }}</td></tr>
+  <tr><th>Recipients</th><td>{{ audience.recipients }}</td></tr>
+  {% for code, n in audience.missing_consent.items %}
+  <tr><th>Missing consent: {{ code }}</th><td>{{ n }}</td></tr>
+  {% endfor %}
+</table>
+
+<h2>Preflight</h2>
+{% if findings %}
+<table>
+  <thead><tr><th>Level</th><th>Check</th><th>Detail</th></tr></thead>
+  <tbody>
+  {% for f in findings %}
+    <tr><td>{{ f.level }}</td><td><code>{{ f.code }}</code></td><td>{{ f.message }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>All checks passed.</p>
+{% endif %}
+
+<h2>Sample renders (real recipients)</h2>
+{% if samples %}
+<table>
+  <thead><tr><th>Contact</th><th>Subject</th><th>Content hash</th></tr></thead>
+  <tbody>
+  {% for s in samples %}
+    <tr><td><code>{{ s.contact_id|truncatechars:13 }}</code></td>
+        <td>{% if s.error %}<span class="errornote">{{ s.error }}</span>{% else %}{{ s.subject }}{% endif %}</td>
+        <td><code>{{ s.content_hash|default:""|truncatechars:15 }}</code></td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No recipients to sample.</p>
+{% endif %}
+{% endif %}
+
+{% if snapshot %}
+<h2>Approved snapshot</h2>
+<p>Approved by {{ snapshot.approved_by }} on {{ snapshot.created_at }}:
+   {{ snapshot.recipient_count }} recipients, template checksum
+   <code>{{ snapshot.template_checksum|truncatechars:15 }}</code>.</p>
+{% endif %}
+
+{% if can_review %}
+<h2>Decision</h2>
+<form method="post">{% csrf_token %}
+  <p><label for="note">Note (required to reject or request changes)</label><br>
+     <textarea id="note" name="note" rows="3" cols="80"></textarea></p>
+  <button type="submit" name="decision" value="approve" {% if has_failures %}disabled{% endif %}>Approve</button>
+  <button type="submit" name="decision" value="request_changes">Request changes</button>
+  <button type="submit" name="decision" value="reject">Reject</button>
+</form>
+<p class="help">Approving re-runs preflight and freezes the recipients, their consent records and the template checksum.</p>
+{% endif %}
+{% endblock %}

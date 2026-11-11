@@ -1,0 +1,39 @@
+# Test inventory: the hosts are containers started by run.sh; Ansible reaches
+# them through the Docker API, not SSH. Secrets come from the run's
+# generated extra-vars file, never from here.
+all:
+  vars:
+    env_name: test
+    ansible_connection: community.docker.docker_api
+    ansible_python_interpreter: /usr/bin/python3
+    # Test network (run.sh): the "app network" is the whole test subnet.
+    postgres_app_networks: [10.251.0.0/24]
+    firewall_admin_networks: [10.251.0.0/24]
+    pgbackrest_s3_endpoint: minio
+    pgbackrest_s3_port: 9000
+    pgbackrest_s3_bucket: pitr
+    pgbackrest_s3_region: us-east-1
+    pgbackrest_s3_uri_style: path
+    pgbackrest_s3_verify_tls: false
+    postgres_shared_buffers: 128MB
+    postgres_effective_cache_size: 256MB
+    redis_sysctl: false             # vm.* is not namespaced: would change the Docker VM
+    common_ssh_hardening: false     # no sshd in the test hosts
+  children:
+    db:
+      hosts:
+        db1:
+          firewall_allow:
+            - {port: 5432, sources: [10.251.0.0/24], comment: postgres from the app network}
+            - {port: 9100, sources: [10.251.0.0/24], comment: node_exporter}
+    cache:
+      hosts:
+        cache1:
+          firewall_allow:
+            - {port: 6379, sources: [10.251.0.0/24], comment: redis from the app network}
+    mq:
+      hosts:
+        mq1:
+          firewall_allow:
+            - {port: 5672, sources: [10.251.0.0/24], comment: amqp from the app network}
+            - {port: 15692, sources: [10.251.0.0/24], comment: rabbitmq metrics}

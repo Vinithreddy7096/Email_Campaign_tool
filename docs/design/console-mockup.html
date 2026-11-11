@@ -1,0 +1,956 @@
+<title>Email Scheduler Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Schibsted+Grotesk:wght@600;700&display=swap">
+<style>
+/* Layout: fixed left rail of sections (top strip on phones), one working page at a time; state lives in pills and chips, numbers in mono. */
+:root {
+  --bg: #f3f5f8;
+  --surface: #ffffff;
+  --sunk: #eaeef3;
+  --ink: #17212c;
+  --muted: #5a6776;
+  --line: #d9dfe7;
+  --accent: #2a5ba3;
+  --accent-soft: #e3ebf7;
+  --ok: #1d7a4c;   --ok-soft: #dff2e8;
+  --warn: #9a640a; --warn-soft: #fbefd8;
+  --bad: #b2352d;  --bad-soft: #f8e1df;
+  --idle: #6b7684; --idle-soft: #e8ecf0;
+  --f-display: "Schibsted Grotesk", "Helvetica Neue", Arial, sans-serif;
+  --f-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --r: 6px;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0e1319; --surface: #151c24; --sunk: #1b232d; --ink: #e2e8ef; --muted: #94a1b0; --line: #29343f;
+  --accent: #82a9e6; --accent-soft: #1d2a3d;
+  --ok: #55c391; --ok-soft: #15301f; --warn: #e2ab4c; --warn-soft: #33270f; --bad: #f07d72; --bad-soft: #3a1c1a; --idle: #9aa5b2; --idle-soft: #232c36;
+  color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #0e1319; --surface: #151c24; --sunk: #1b232d; --ink: #e2e8ef; --muted: #94a1b0; --line: #29343f;
+  --accent: #82a9e6; --accent-soft: #1d2a3d;
+  --ok: #55c391; --ok-soft: #15301f; --warn: #e2ab4c; --warn-soft: #33270f; --bad: #f07d72; --bad-soft: #3a1c1a; --idle: #9aa5b2; --idle-soft: #232c36;
+  color-scheme: dark; }
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--ink); font: 14px/1.5 var(--f-body); }
+a { color: var(--accent); }
+code, .mono { font-family: var(--f-mono); font-size: 12.5px; }
+.num { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+h1, h2, h3 { font-family: var(--f-display); text-wrap: balance; margin: 0; letter-spacing: -0.01em; }
+h1 { font-size: 22px; } h2 { font-size: 16px; } h3 { font-size: 14px; }
+p { margin: 0; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.app { display: grid; grid-template-columns: 228px minmax(0, 1fr); min-height: 100%; }
+.rail { background: var(--surface); border-right: 1px solid var(--line); padding-block: 18px; padding-inline: 12px; position: sticky; top: env(safe-area-inset-top, 0px); height: 100vh; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
+.brand { display: flex; align-items: center; gap: 10px; padding-inline: 8px; }
+.brand svg { flex: none; color: var(--accent); }
+.brand b { font-family: var(--f-display); font-size: 15px; line-height: 1.15; }
+.brand small { display: block; color: var(--muted); font-size: 11px; font-weight: 400; }
+.navgroup { display: flex; flex-direction: column; gap: 1px; }
+.navgroup .lbl { font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); padding: 6px 8px 4px; }
+.nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 8px; border-radius: 5px; color: var(--ink); text-decoration: none; font-size: 13.5px; }
+.nav:hover { background: var(--sunk); }
+.nav[aria-current="page"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.nav .count { font-family: var(--f-mono); font-size: 11px; color: var(--muted); }
+.rail .role { margin-top: auto; display: flex; flex-direction: column; gap: 4px; padding-inline: 8px; font-size: 12px; color: var(--muted); }
+select, input, textarea { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 5px; padding: 6px 8px; }
+textarea { font-family: var(--f-mono); font-size: 12.5px; width: 100%; resize: vertical; }
+
+.main { min-width: 0; padding-block: 18px 48px; padding-inline: 28px; display: flex; flex-direction: column; gap: 18px; }
+.topbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); }
+.topbar .sendstate { display: inline-flex; align-items: center; gap: 6px; color: var(--ink); font-weight: 500; }
+.topbar .spacer { flex: 1; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); display: inline-block; }
+.paused .dot { background: var(--bad); }
+
+.page { display: flex; flex-direction: column; gap: 18px; }
+.page[hidden] { display: none; }
+.phead { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.phead .sub { color: var(--muted); margin-top: 4px; max-width: 68ch; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+.btn { font: 500 13px var(--f-body); border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 5px; padding: 6px 12px; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+.btn.danger { color: var(--bad); border-color: var(--bad); }
+.btn.danger.solid { background: var(--bad); color: var(--surface); }
+.btn:disabled, .btn[aria-disabled="true"] { opacity: .45; cursor: not-allowed; }
+
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); min-width: 0; }
+.panel > header { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.panel > .body { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+.grid { display: grid; gap: 16px; }
+.g2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.g3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.split { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); }
+
+.pill { display: inline-flex; align-items: center; gap: 5px; font: 500 11.5px var(--f-body); padding: 2px 8px; border-radius: 999px; white-space: nowrap; background: var(--idle-soft); color: var(--idle); }
+.pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.pill.ok { background: var(--ok-soft); color: var(--ok); }
+.pill.warn { background: var(--warn-soft); color: var(--warn); }
+.pill.bad { background: var(--bad-soft); color: var(--bad); }
+.pill.info { background: var(--accent-soft); color: var(--accent); }
+.tag { font: 500 10.5px var(--f-mono); letter-spacing: .02em; padding: 1px 6px; border-radius: 3px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.tag.built { color: var(--ok); border-color: var(--ok); }
+.tag.planned { color: var(--warn); border-color: var(--warn); }
+.q { font: 500 11px var(--f-mono); color: var(--warn); background: var(--warn-soft); padding: 1px 5px; border-radius: 3px; white-space: nowrap; }
+
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th { text-align: left; font-weight: 500; font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; padding: 8px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+td.r, th.r { text-align: right; }
+tbody tr.link { cursor: pointer; }
+tbody tr.link:hover td { background: var(--sunk); }
+.muted { color: var(--muted); }
+.small { font-size: 12px; }
+
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.tile { background: var(--surface); padding: 12px 14px; display: flex; flex-direction: column; gap: 2px; }
+.tile .k { font-size: 11.5px; color: var(--muted); }
+.tile .v { font: 500 20px var(--f-mono); font-variant-numeric: tabular-nums; }
+.tile .d { font-size: 11.5px; color: var(--muted); }
+.tile.alert .v { color: var(--bad); }
+
+.funnel { display: flex; flex-direction: column; gap: 6px; }
+.frow { display: grid; grid-template-columns: 120px minmax(0, 1fr) 76px; align-items: center; gap: 10px; font-size: 12.5px; }
+.bar { height: 10px; background: var(--sunk); border-radius: 2px; overflow: hidden; }
+.bar > span { display: block; height: 100%; background: var(--accent); }
+.bar.ok > span { background: var(--ok); } .bar.warn > span { background: var(--warn); } .bar.bad > span { background: var(--bad); } .bar.idle > span { background: var(--idle); }
+
+.alertlist { display: flex; flex-direction: column; }
+.alertrow { display: grid; grid-template-columns: 4px minmax(0, 1fr) auto; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--line); align-items: center; }
+.alertrow:last-child { border-bottom: 0; }
+.alertrow .stripe { align-self: stretch; border-radius: 2px; background: var(--idle); }
+.alertrow.bad .stripe { background: var(--bad); } .alertrow.warn .stripe { background: var(--warn); } .alertrow.info .stripe { background: var(--accent); }
+.alertrow b { font-weight: 600; }
+
+.note { border: 1px dashed var(--line); border-radius: var(--r); padding: 10px 12px; font-size: 12.5px; color: var(--muted); background: var(--surface); }
+.note.warn { border-color: var(--warn); color: var(--ink); background: var(--warn-soft); border-style: solid; }
+.note.bad { border-color: var(--bad); color: var(--ink); background: var(--bad-soft); border-style: solid; }
+
+.steps { display: flex; gap: 0; flex-wrap: wrap; font-size: 12.5px; counter-reset: s; }
+.steps li { list-style: none; display: flex; align-items: center; gap: 8px; padding: 6px 14px 6px 0; color: var(--muted); }
+.steps li::before { counter-increment: s; content: counter(s); width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font: 500 11px var(--f-mono); border: 1px solid var(--line); background: var(--surface); }
+.steps li.done { color: var(--ink); } .steps li.done::before { content: "✓"; background: var(--ok-soft); border-color: var(--ok); color: var(--ok); }
+.steps li.now { color: var(--accent); font-weight: 600; } .steps li.now::before { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.steps li.fail { color: var(--bad); } .steps li.fail::before { content: "!"; border-color: var(--bad); background: var(--bad-soft); color: var(--bad); }
+.steps li + li { padding-left: 14px; border-left: 1px solid var(--line); }
+ol.steps { margin: 0; padding: 0; }
+
+.kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 16px; font-size: 13px; }
+.kv dt { color: var(--muted); } .kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+
+.finding { display: grid; grid-template-columns: 54px minmax(0, 1fr); gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+.finding:last-child { border-bottom: 0; }
+.lvl { font: 600 10.5px var(--f-mono); padding: 2px 0; text-align: center; border-radius: 3px; height: fit-content; }
+.lvl.FAIL { background: var(--bad-soft); color: var(--bad); } .lvl.WARN { background: var(--warn-soft); color: var(--warn); } .lvl.PASS { background: var(--ok-soft); color: var(--ok); }
+
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
+.seg button { font: 500 12px var(--f-body); border: 0; background: var(--surface); color: var(--muted); padding: 5px 10px; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
+
+.preview { background: var(--sunk); border-radius: var(--r); padding: 14px; display: flex; justify-content: center; }
+.mail { width: 100%; max-width: 600px; background: #ffffff; color: #1d2733; border-radius: 4px; box-shadow: 0 1px 2px rgba(0,0,0,.12); font: 14px/1.55 Georgia, "Times New Roman", serif; transition: max-width .2s; }
+.mail.narrow { max-width: 360px; }
+.mail .mhead { padding: 18px 24px; border-bottom: 1px solid #e6e9ee; font: 600 13px var(--f-body); color: #2a5ba3; letter-spacing: .04em; text-transform: uppercase; }
+.mail .mbody { padding: 20px 24px; display: flex; flex-direction: column; gap: 12px; }
+.mail .mbody h4 { margin: 0; font: 700 20px var(--f-display); color: #17212c; }
+.mail .cta { display: inline-block; background: #2a5ba3; color: #fff; padding: 9px 16px; border-radius: 4px; text-decoration: none; font: 600 13px var(--f-body); width: fit-content; }
+.mail .mfoot { padding: 14px 24px 20px; border-top: 1px solid #e6e9ee; font: 11.5px/1.5 var(--f-body); color: #6b7684; }
+.mail .mfoot a { color: #2a5ba3; }
+.mail mark { background: #fbefd8; color: #7a4f05; padding: 0 2px; }
+pre.text { margin: 0; white-space: pre-wrap; font: 12.5px/1.6 var(--f-mono); background: var(--sunk); border-radius: var(--r); padding: 12px 14px; max-height: 420px; overflow: auto; }
+
+.dnsrow { display: grid; grid-template-columns: 110px minmax(0, 1fr) auto; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); align-items: start; }
+.dnsrow:last-child { border-bottom: 0; }
+.dnsrow .rec { font: 12px var(--f-mono); color: var(--muted); overflow-wrap: anywhere; }
+.dnsrow .rec b { color: var(--ink); font-weight: 500; }
+
+.switches { display: flex; flex-direction: column; }
+.switch { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.switch:last-child { border-bottom: 0; }
+.switch .what { display: flex; flex-direction: column; gap: 2px; }
+.switch .what span { font-size: 12px; color: var(--muted); }
+
+.confirm { border: 1px solid var(--bad); background: var(--bad-soft); border-radius: var(--r); padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+.confirm[hidden] { display: none; }
+
+.toast { position: fixed; right: 18px; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); background: var(--ink); color: var(--bg); padding: 9px 14px; border-radius: 5px; font-size: 13px; box-shadow: 0 4px 14px rgba(0,0,0,.2); }
+.toast[hidden] { display: none; }
+
+.unsub { max-width: 440px; margin: 24px auto; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 28px; display: flex; flex-direction: column; gap: 14px; text-align: left; }
+.unsub .from { font-size: 12px; color: var(--muted); }
+
+.field { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; }
+.field > span { color: var(--muted); }
+.formrow { display: flex; gap: 12px; flex-wrap: wrap; }
+.formrow > .field { flex: 1 1 180px; }
+
+@media (max-width: 980px) { .split, .g3 { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 820px) {
+  .app { grid-template-columns: minmax(0, 1fr); }
+  .rail { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); flex-direction: row; flex-wrap: wrap; align-items: center; padding-inline: 16px; gap: 10px; }
+  .navgroup { flex-direction: row; flex-wrap: nowrap; overflow-x: auto; width: 100%; gap: 2px; }
+  .navgroup .lbl { display: none; }
+  .nav { white-space: nowrap; }
+  .nav .count { display: none; }
+  .rail .role { margin-top: 0; flex-direction: row; align-items: center; gap: 8px; }
+  .navs { display: flex; flex-direction: column; gap: 4px; width: 100%; min-width: 0; }
+  .main { padding-inline: 16px; }
+  .g2 { grid-template-columns: minmax(0, 1fr); }
+  .frow { grid-template-columns: 96px minmax(0, 1fr) 64px; }
+  .dnsrow { grid-template-columns: minmax(0, 1fr) auto; }
+  .dnsrow .rec { grid-column: 1 / -1; grid-row: 2; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="app">
+  <nav class="rail" aria-label="Sections">
+    <div class="brand"><svg width="30" height="22" viewBox="0 0 30 22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="1" y="1" width="28" height="20" rx="2"/><path d="M1.5 2.5 15 12.5 28.5 2.5"/><path d="M20 15h6M22 18h4" stroke-width="1.2"/></svg><b>Email Scheduler<small>Operations console</small></b></div>
+    <div class="navs">
+      <div class="navgroup">
+        <span class="lbl">Overview</span>
+        <a class="nav" href="#overview">Today</a>
+      </div>
+      <div class="navgroup">
+        <span class="lbl">Sending</span>
+        <a class="nav" href="#campaigns">Campaigns <span class="count">7</span></a>
+        <a class="nav" href="#templates">Templates <span class="count">12</span></a>
+        <a class="nav" href="#review">Approvals <span class="count">2</span></a>
+        <a class="nav" href="#audience">Contacts and consent</a>
+      </div>
+      <div class="navgroup">
+        <span class="lbl">Deliverability</span>
+        <a class="nav" href="#domains">Domains and senders</a>
+        <a class="nav" href="#events">Bounces and complaints <span class="count">3</span></a>
+        <a class="nav" href="#suppressions">Suppression list</a>
+        <a class="nav" href="#controls">Sending controls</a>
+      </div>
+      <div class="navgroup">
+        <span class="lbl">Governance</span>
+        <a class="nav" href="#audit">Audit log</a>
+        <a class="nav" href="#unsubscribe">Unsubscribe page</a>
+      </div>
+    </div>
+    <label class="role" for="role">Viewing as
+      <select id="role">
+        <option value="manager">Campaign Manager</option>
+        <option value="approver">Approver / Compliance</option>
+        <option value="operator">Deliverability Operator</option>
+        <option value="admin">System Administrator</option>
+        <option value="analyst">Read-Only Analyst</option>
+      </select>
+    </label>
+  </nav>
+
+  <main class="main">
+    <div class="topbar">
+      <span class="sendstate" id="sendstate"><span class="dot"></span><span id="sendstate-text">All sending running</span></span>
+      <span>·</span><span>Production · acme-mail</span>
+      <span class="spacer"></span>
+      <span class="tag">Mockup · example data</span>
+    </div>
+
+    <!-- ============ TODAY ============ -->
+    <section class="page" id="p-overview" data-page="overview">
+      <div class="phead">
+        <div><h1>Today</h1><p class="sub">Tue 14 Oct 2026, 00:00 to now (UTC). Business and reputation telemetry from spec §14.</p></div>
+        <div class="actions"><span class="tag planned">backend planned · §10.8.3</span></div>
+      </div>
+      <div class="tiles">
+        <div class="tile"><span class="k">Scheduled</span><span class="v">84,210</span><span class="d">4 campaigns + API</span></div>
+        <div class="tile"><span class="k">Accepted</span><span class="v">61,904</span><span class="d">98.6% of submitted</span></div>
+        <div class="tile"><span class="k">Deferred (4xx)</span><span class="v">712</span><span class="d">Postfix retrying</span></div>
+        <div class="tile"><span class="k">Hard bounced</span><span class="v">203</span><span class="d">0.32% · suppressed</span></div>
+        <div class="tile alert"><span class="k">Complaints</span><span class="v">19</span><span class="d">0.031% · suppressed</span></div>
+        <div class="tile"><span class="k">Unsubscribed</span><span class="v">141</span><span class="d">median 4 s to honor</span></div>
+      </div>
+      <div class="grid split">
+        <div class="panel">
+          <header><h2>Needs attention</h2><span class="muted small">4 items</span></header>
+          <div class="alertlist">
+            <div class="alertrow bad"><span class="stripe"></span><div><b>news.acme.example: DKIM selector es2026b not found</b><p class="muted small">DNS checker 23:40 UTC. Domain held; 1 scheduled campaign blocked.</p></div><a class="btn" href="#domains">Open domain</a></div>
+            <div class="alertrow warn"><span class="stripe"></span><div><b>No rate limits configured</b><p class="muted small">Policy checks 6 and 7 apply nothing until limits are set. <span class="q">Q-POL-1</span></p></div><a class="btn" href="#controls">Review</a></div>
+            <div class="alertrow warn"><span class="stripe"></span><div><b>3 delivery reports could not be classified</b><p class="muted small">Stored raw; no suppression applied until reviewed.</p></div><a class="btn" href="#events">Review</a></div>
+            <div class="alertrow info"><span class="stripe"></span><div><b>2 template versions waiting for approval</b><p class="muted small">October newsletter v4, Password reset v2</p></div><a class="btn" href="#review">Open</a></div>
+          </div>
+        </div>
+        <div class="panel">
+          <header><h2>Queues</h2><span class="muted small">spec §14 Queue</span></header>
+          <div class="body">
+            <dl class="kv">
+              <dt>App queue depth</dt><dd class="num">4,118 jobs</dd>
+              <dt>Oldest job</dt><dd class="num">2 m 40 s</dd>
+              <dt>Held by policy</dt><dd class="num">1,206 <span class="muted">(domain not active)</span></dd>
+              <dt>MTA queue (active)</dt><dd class="num">388</dd>
+              <dt>MTA queue (deferred)</dt><dd class="num">712</dd>
+              <dt>Held for review</dt><dd class="num">2 <span class="muted">(lost SMTP reply after DATA)</span> <span class="q">Q-DEL-1</span></dd>
+            </dl>
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <header><h2>Campaigns in flight</h2><a href="#campaigns" class="small">All campaigns</a></header>
+        <div class="tablewrap"><table>
+          <thead><tr><th>Campaign</th><th>Status</th><th>Domain</th><th class="r">Audience</th><th>Progress</th><th class="r">Accepted</th><th class="r">Complaints</th></tr></thead>
+          <tbody>
+            <tr class="link" data-go="campaign"><td>October newsletter</td><td><span class="pill info">Sending</span></td><td class="mono">mail.acme.example</td><td class="r num">48,920</td><td style="min-width:140px"><div class="bar"><span style="width:72%"></span></div></td><td class="r num">35,118</td><td class="r num">11</td></tr>
+            <tr class="link" data-go="campaign"><td>Webinar reminder, 15 Oct</td><td><span class="pill">Scheduled 09:00</span></td><td class="mono">mail.acme.example</td><td class="r num">6,402</td><td><div class="bar"><span style="width:0%"></span></div></td><td class="r num">0</td><td class="r num">0</td></tr>
+            <tr class="link" data-go="campaign"><td>Product digest, EU</td><td><span class="pill bad">Held · domain</span></td><td class="mono">news.acme.example</td><td class="r num">1,206</td><td><div class="bar bad"><span style="width:0%"></span></div></td><td class="r num">0</td><td class="r num">0</td></tr>
+            <tr><td>Transactional API</td><td><span class="pill ok">Running</span></td><td class="mono">notify.acme.example</td><td class="r num">-</td><td class="muted small">continuous</td><td class="r num">26,786</td><td class="r num">8</td></tr>
+          </tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <!-- ============ CAMPAIGNS ============ -->
+    <section class="page" id="p-campaigns" data-page="campaigns" hidden>
+      <div class="phead">
+        <div><h1>Campaigns</h1><p class="sub">Creating a campaign never sends. It sends only after preflight passes, an approver signs off, and it is scheduled on an active domain.</p></div>
+        <div class="actions"><span class="tag planned">backend planned · §10.6</span><a class="btn primary" href="#campaign" data-needs="manager">New campaign</a></div>
+      </div>
+      <div class="panel">
+        <header><div class="seg" role="group" aria-label="Filter"><button aria-pressed="true">All 7</button><button aria-pressed="false">Needs review 1</button><button aria-pressed="false">Live 2</button><button aria-pressed="false">Done 3</button></div><input id="camp-search" placeholder="Search campaigns" aria-label="Search campaigns"></header>
+        <div class="tablewrap"><table>
+          <thead><tr><th>Name</th><th>Status</th><th>Template</th><th>Sender</th><th class="r">Eligible</th><th class="r">Suppressed</th><th>Schedule</th><th>Owner</th></tr></thead>
+          <tbody>
+            <tr class="link" data-go="campaign"><td>Black Friday early access</td><td><span class="pill warn">Ready for review</span></td><td>BF early access v2</td><td class="mono small">offers@mail.acme.example</td><td class="r num">52,310</td><td class="r num">1,874</td><td class="muted">not set</td><td>Priya N.</td></tr>
+            <tr class="link" data-go="campaign"><td>October newsletter</td><td><span class="pill info">Sending</span></td><td>Newsletter v3</td><td class="mono small">news@mail.acme.example</td><td class="r num">48,920</td><td class="r num">2,102</td><td class="num">14 Oct 06:00</td><td>Priya N.</td></tr>
+            <tr class="link" data-go="campaign"><td>Webinar reminder, 15 Oct</td><td><span class="pill">Scheduled</span></td><td>Event reminder v5</td><td class="mono small">events@mail.acme.example</td><td class="r num">6,402</td><td class="r num">88</td><td class="num">15 Oct 09:00</td><td>Sam O.</td></tr>
+            <tr class="link" data-go="campaign"><td>Product digest, EU</td><td><span class="pill bad">Held · domain</span></td><td>Digest v7</td><td class="mono small">digest@news.acme.example</td><td class="r num">1,206</td><td class="r num">41</td><td class="num">14 Oct 00:30</td><td>Sam O.</td></tr>
+            <tr class="link" data-go="campaign"><td>Re-engagement test</td><td><span class="pill bad">Preflight failed</span></td><td>Winback v1</td><td class="mono small">hello@acme.example</td><td class="r num">3,000</td><td class="r num">-</td><td class="muted">not set</td><td>Lee W.</td></tr>
+            <tr><td>September newsletter</td><td><span class="pill ok">Completed</span></td><td>Newsletter v2</td><td class="mono small">news@mail.acme.example</td><td class="r num">47,655</td><td class="r num">1,990</td><td class="num">16 Sep 06:00</td><td>Priya N.</td></tr>
+            <tr><td>Spring sale</td><td><span class="pill">Canceled</span></td><td>Spring v4</td><td class="mono small">offers@mail.acme.example</td><td class="r num">-</td><td class="r num">-</td><td class="muted">canceled 2 Apr</td><td>Lee W.</td></tr>
+          </tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <!-- ============ CAMPAIGN DETAIL ============ -->
+    <section class="page" id="p-campaign" data-page="campaign" hidden>
+      <div class="phead">
+        <div><p class="small muted"><a href="#campaigns">Campaigns</a> / Black Friday early access</p><h1>Black Friday early access</h1><p class="sub">Marketing · owner Priya N. · draft created 12 Oct 2026</p></div>
+        <div class="actions"><span class="tag planned">backend planned · §10.6</span><span class="pill warn">Ready for review</span></div>
+      </div>
+      <ol class="steps" aria-label="Campaign workflow">
+        <li class="done">Sender</li><li class="done">Audience</li><li class="done">Template</li><li class="done">Preflight</li><li class="now">Approval</li><li>Schedule</li><li>Sending</li>
+      </ol>
+      <div class="grid split">
+        <div style="display:flex;flex-direction:column;gap:16px;min-width:0">
+          <div class="panel">
+            <header><h2>Setup</h2><button class="btn" data-needs="manager">Edit draft</button></header>
+            <div class="body"><dl class="kv">
+              <dt>Sender identity</dt><dd>Acme Offers &lt;offers@mail.acme.example&gt; · reply-to support@acme.example</dd>
+              <dt>Sending domain</dt><dd class="mono">mail.acme.example <span class="pill ok">Active</span></dd>
+              <dt>Audience</dt><dd>Segment “Opted-in shoppers, last 12 months” · <span class="num">54,184</span> members</dd>
+              <dt>Template</dt><dd>BF early access <b>v2</b> <span class="pill ok">Approved</span> <code>sha256:9f3c…a11e</code></dd>
+              <dt>Purpose</dt><dd>Marketing (unsubscribe and footer required)</dd>
+            </dl></div>
+          </div>
+          <div class="panel">
+            <header><h2>Campaign preflight</h2><span class="pill ok">0 fail · 1 warn</span></header>
+            <div class="body" style="gap:0">
+              <div class="finding"><span class="lvl PASS">PASS</span><div><b>Sender alignment</b><p class="muted small">From domain is mail.acme.example; SPF, DKIM (es2026a) and DMARC alignment pass.</p></div></div>
+              <div class="finding"><span class="lvl PASS">PASS</span><div><b>Template preflight</b><p class="muted small">Re-run on v2: unsubscribe link in HTML and text, no empty links, 38 KB HTML.</p></div></div>
+              <div class="finding"><span class="lvl PASS">PASS</span><div><b>Consent</b><p class="muted small">Every marketing recipient has an active consent record (source, timestamp, system).</p></div></div>
+              <div class="finding"><span class="lvl WARN">WARN</span><div><b>1,874 recipients excluded by suppression</b><p class="muted small">1,201 unsubscribed, 512 hard bounce, 161 complaint. Excluded, not failed.</p></div></div>
+              <div class="finding"><span class="lvl PASS">PASS</span><div><b>Sample renders</b><p class="muted small">5 of 5 real recipients rendered without missing variables. <a href="#review">View samples</a></p></div></div>
+            </div>
+          </div>
+          <div class="panel">
+            <header><h2>Audience breakdown</h2><span class="muted small">at snapshot time</span></header>
+            <div class="body"><div class="funnel">
+              <div class="frow"><span>Segment members</span><div class="bar idle"><span style="width:100%"></span></div><span class="num r">54,184</span></div>
+              <div class="frow"><span>Suppressed</span><div class="bar warn"><span style="width:3.5%"></span></div><span class="num r">1,874</span></div>
+              <div class="frow"><span>No consent</span><div class="bar bad"><span style="width:0%"></span></div><span class="num r">0</span></div>
+              <div class="frow"><span>Eligible</span><div class="bar ok"><span style="width:96.5%"></span></div><span class="num r">52,310</span></div>
+            </div></div>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:16px;min-width:0">
+          <div class="panel">
+            <header><h2>Approval</h2><span class="muted small">Approver / Compliance only</span></header>
+            <div class="body">
+              <p class="small">Approving freezes an immutable snapshot: template v2 and its checksum, sender values, the 52,310 contact ids with their consent record ids, and this preflight report.</p>
+              <label class="field" for="camp-note"><span>Note (required to reject or request changes)</span><textarea id="camp-note" rows="3" placeholder="e.g. Footer needs the postal address"></textarea></label>
+              <div class="actions">
+                <button class="btn primary" data-needs="approver" data-toast="Approved. Snapshot frozen.">Approve</button>
+                <button class="btn" data-needs="approver" data-toast="Changes requested.">Request changes</button>
+                <button class="btn danger" data-needs="approver" data-toast="Rejected.">Reject</button>
+              </div>
+            </div>
+          </div>
+          <div class="panel">
+            <header><h2>Schedule</h2></header>
+            <div class="body">
+              <div class="formrow">
+                <label class="field" for="sched-date"><span>Start (UTC)</span><input id="sched-date" type="datetime-local" value="2026-11-20T06:00"></label>
+              </div>
+              <div class="note">Schedule is refused if the domain, authentication, consent or warm-up checks fail at the time you schedule. Approval comes first.</div>
+              <div class="note warn">Warm-up limits for mail.acme.example are not configured, so nothing caps this send. <span class="q">Q-POL-1</span></div>
+              <div class="actions"><button class="btn primary" aria-disabled="true" disabled>Schedule</button><span class="small muted">Needs approval</span></div>
+            </div>
+          </div>
+          <div class="panel">
+            <header><h2>While sending</h2></header>
+            <div class="body">
+              <div class="actions"><button class="btn" disabled>Pause</button><button class="btn danger" disabled>Cancel</button></div>
+              <p class="small muted">Pause stops future dispatch. Messages the mail server already accepted still complete.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ TEMPLATES ============ -->
+    <section class="page" id="p-templates" data-page="templates" hidden>
+      <div class="phead">
+        <div><h1>Templates</h1><p class="sub">Each change is a new version. Only approved versions can be sent; a running campaign keeps the exact version it was approved with.</p></div>
+        <div class="actions"><span class="tag built">backend built · §10.5</span><a class="btn primary" href="#editor" data-needs="manager">New template</a></div>
+      </div>
+      <div class="panel">
+        <header><div class="seg" role="group" aria-label="Category"><button aria-pressed="true">All</button><button aria-pressed="false">Marketing</button><button aria-pressed="false">Transactional</button></div><input id="tpl-search" placeholder="Search by name or subject" aria-label="Search templates"></header>
+        <div class="tablewrap"><table>
+          <thead><tr><th>Template</th><th>Category</th><th>Live version</th><th>In progress</th><th>Owner</th><th>Updated</th></tr></thead>
+          <tbody>
+            <tr class="link" data-go="review"><td><b>October newsletter</b><div class="small muted">Monthly roundup</div></td><td>Marketing</td><td>v3 <span class="pill ok">Approved</span></td><td>v4 <span class="pill warn">Pending approval</span></td><td>Priya N.</td><td class="num small">13 Oct 18:02</td></tr>
+            <tr class="link" data-go="editor"><td><b>Password reset</b><div class="small muted">Sent by API</div></td><td>Transactional</td><td>v1 <span class="pill ok">Approved</span></td><td>v2 <span class="pill warn">Pending approval</span></td><td>Dev team</td><td class="num small">13 Oct 11:40</td></tr>
+            <tr class="link" data-go="editor"><td><b>BF early access</b></td><td>Marketing</td><td>v2 <span class="pill ok">Approved</span></td><td class="muted">-</td><td>Priya N.</td><td class="num small">12 Oct 09:15</td></tr>
+            <tr class="link" data-go="editor"><td><b>Winback</b></td><td>Marketing</td><td class="muted">none</td><td>v1 <span class="pill bad">Changes requested</span></td><td>Lee W.</td><td class="num small">10 Oct 16:20</td></tr>
+            <tr class="link" data-go="editor"><td><b>Order receipt</b></td><td>Transactional</td><td>v6 <span class="pill ok">Approved</span></td><td>v7 <span class="pill">Draft</span></td><td>Dev team</td><td class="num small">9 Oct 14:03</td></tr>
+            <tr><td><b>Spring sale</b></td><td>Marketing</td><td>v4 <span class="pill">Retired</span></td><td class="muted">-</td><td>Lee W.</td><td class="num small">2 Apr 10:00</td></tr>
+          </tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <!-- ============ TEMPLATE EDITOR ============ -->
+    <section class="page" id="p-editor" data-page="editor" hidden>
+      <div class="phead">
+        <div><p class="small muted"><a href="#templates">Templates</a> / Order receipt</p><h1>Order receipt · v7</h1><p class="sub">Transactional · draft by Dev team · copied from v6</p></div>
+        <div class="actions"><span class="tag built">backend built · §10.5</span><span class="pill">Draft</span></div>
+      </div>
+      <ol class="steps" aria-label="Version status"><li class="now">Draft</li><li>Pending approval</li><li>Approved</li><li>Retired</li></ol>
+      <div class="grid split">
+        <div class="panel">
+          <header><h2>Content</h2><span class="small muted">Editable while Draft; frozen once submitted</span></header>
+          <div class="body">
+            <label class="field" for="ed-subject"><span>Subject</span><input id="ed-subject" value="Your receipt for order {{ order_id }}"></label>
+            <label class="field" for="ed-html"><span>HTML body</span><textarea id="ed-html" rows="9">&lt;h1&gt;Thanks, {{ first_name }}&lt;/h1&gt;
+&lt;p&gt;We received your order {{ order_id }} for {{ total }}.&lt;/p&gt;
+{% if tracking_url %}&lt;p&gt;&lt;a href="{{ tracking_url }}"&gt;Track your parcel&lt;/a&gt;&lt;/p&gt;{% endif %}
+&lt;p&gt;&lt;a href="#"&gt;View order&lt;/a&gt;&lt;/p&gt;
+&lt;img src="https://cdn.acme.example/logo.png"&gt;</textarea></label>
+            <label class="field" for="ed-text"><span>Plain-text body</span><textarea id="ed-text" rows="5">Thanks, {{ first_name }}
+
+We received your order {{ order_id }} for {{ total }}.
+{% if tracking_url %}Track your parcel: {{ tracking_url }}{% endif %}</textarea></label>
+            <div class="grid g2">
+              <div class="field"><span>Variables</span>
+                <div class="tablewrap"><table class="small">
+                  <thead><tr><th>Name</th><th>Required</th><th>Default</th></tr></thead>
+                  <tbody>
+                    <tr><td class="mono">first_name</td><td>yes</td><td class="muted">-</td></tr>
+                    <tr><td class="mono">order_id</td><td>yes</td><td class="muted">-</td></tr>
+                    <tr><td class="mono">total</td><td>yes</td><td class="muted">-</td></tr>
+                    <tr><td class="mono">tracking_url</td><td>no</td><td class="muted">-</td></tr>
+                  </tbody>
+                </table></div>
+              </div>
+              <label class="field" for="ed-sample"><span>Sample data (JSON)</span><textarea id="ed-sample" rows="7">{"first_name": "Dana",
+ "order_id": "A-10442",
+ "total": "$84.20",
+ "tracking_url": "https://track.acme.example/A-10442"}</textarea></label>
+            </div>
+            <p class="small muted">Allowed: <code>if</code> <code>for</code> <code>with</code> <code>firstof</code> <code>cycle</code> <code>spaceless</code> <code>comment</code>. No includes, no <code>|safe</code>, nothing that reads the clock or database.</p>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:16px;min-width:0">
+          <div class="panel">
+            <header><h2>Preflight</h2><span class="pill bad" id="pf-sum">1 fail · 1 warn</span></header>
+            <div class="body" style="gap:0" id="pf-list"></div>
+          </div>
+          <div class="panel">
+            <header><h2>Submit</h2></header>
+            <div class="body">
+              <p class="small">Submitting runs preflight again and freezes this version. Any FAIL blocks it.</p>
+              <div class="actions"><button class="btn primary" id="submit-btn" data-needs="manager">Submit for approval</button><a class="btn" href="#review">Preview</a></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ REVIEW ============ -->
+    <section class="page" id="p-review" data-page="review" hidden>
+      <div class="phead">
+        <div><p class="small muted"><a href="#templates">Templates</a> / October newsletter</p><h1>Review October newsletter · v4</h1><p class="sub">Marketing · submitted by Priya N. 13 Oct 18:02 · checksum <code>sha256:4b0e…72d9</code></p></div>
+        <div class="actions"><span class="tag built">backend built · §10.5.4</span><span class="pill warn">Pending approval</span></div>
+      </div>
+      <ol class="steps" aria-label="Version status"><li class="done">Draft</li><li class="now">Pending approval</li><li>Approved</li><li>Retired</li></ol>
+      <div class="grid split">
+        <div class="panel">
+          <header>
+            <h2>Preview with sample data</h2>
+            <div class="seg" role="group" aria-label="Preview size"><button aria-pressed="true" data-w="wide">Desktop</button><button aria-pressed="false" data-w="narrow">Phone</button><button aria-pressed="false" data-w="text">Text</button></div>
+          </header>
+          <div class="body">
+            <dl class="kv small"><dt>From</dt><dd>Acme News &lt;news@mail.acme.example&gt;</dd><dt>Subject</dt><dd><b>Dana, your October picks are here</b></dd></dl>
+            <div class="preview" id="pv-html">
+              <div class="mail" id="mail">
+                <div class="mhead">Acme · October</div>
+                <div class="mbody">
+                  <h4>Hi Dana, here’s what’s new</h4>
+                  <p>Three things we shipped this month, picked for people who bought trail gear in the last year.</p>
+                  <p>Our autumn layering guide covers base layers through shells, with sizes for every fit.</p>
+                  <a class="cta" href="#review">Read the guide</a>
+                  <p style="font-size:12px;color:#6b7684">Image: <mark>autumn-hero.jpg has no alt text</mark></p>
+                </div>
+                <div class="mfoot">You get this because you opted in at acme.example on 3 Mar 2025.<br><a href="#unsubscribe">Unsubscribe</a> from Acme marketing email.</div>
+              </div>
+            </div>
+            <pre class="text" id="pv-text" hidden>Hi Dana, here's what's new
+
+Three things we shipped this month, picked for people who
+bought trail gear in the last year.
+
+Read the guide: https://acme.example/guides/autumn-layers
+
+--
+You get this because you opted in at acme.example on 3 Mar 2025.
+Unsubscribe: https://mail.acme.example/u/eyJjIjo0ND…</pre>
+            <p class="small muted">Rendered in a sandboxed frame: no scripts, no same-origin access.</p>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:16px;min-width:0">
+          <div class="panel">
+            <header><h2>Preflight</h2><span class="pill warn">0 fail · 2 warn</span></header>
+            <div class="body" style="gap:0">
+              <div class="finding"><span class="lvl WARN">WARN</span><div><code>IMG_MISSING_ALT</code><p class="muted small">&lt;img src="autumn-hero.jpg"&gt; has no alt attribute.</p></div></div>
+              <div class="finding"><span class="lvl WARN">WARN</span><div><code>UNDECLARED_VARIABLE</code><p class="muted small">Sample data key “segment_name” is not declared.</p></div></div>
+              <div class="finding"><span class="lvl PASS">PASS</span><div>Unsubscribe link in HTML and text, required footer, no empty or unsafe links, 41 KB HTML, subject has no line breaks.</div></div>
+            </div>
+          </div>
+          <div class="panel">
+            <header><h2>Changes from v3</h2></header>
+            <div class="body small"><dl class="kv"><dt>Subject</dt><dd>changed</dd><dt>HTML</dt><dd>+18 / −11 lines</dd><dt>Text</dt><dd>+6 / −4 lines</dd><dt>Variables</dt><dd>unchanged</dd></dl></div>
+          </div>
+          <div class="panel">
+            <header><h2>Decision</h2><span class="muted small">needs approve permission</span></header>
+            <div class="body">
+              <label class="field" for="rv-note"><span>Note (required to reject or request changes)</span><textarea id="rv-note" rows="3"></textarea></label>
+              <div class="actions">
+                <button class="btn primary" data-needs="approver" data-toast="v4 approved. v3 stays available to campaigns already using it.">Approve</button>
+                <button class="btn" data-needs="approver" data-note="rv-note" data-toast="Changes requested. The author has been notified.">Request changes</button>
+                <button class="btn danger" data-needs="approver" data-note="rv-note" data-toast="v4 rejected.">Reject</button>
+              </div>
+              <p class="small muted">Preflight runs again on approval. Approve is disabled while any check fails.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ CONTACTS ============ -->
+    <section class="page" id="p-audience" data-page="audience" hidden>
+      <div class="phead">
+        <div><h1>Contacts and consent</h1><p class="sub">Every marketing recipient needs a recorded basis or opt-in source, timestamp and source system. Imports are checked before anything is saved.</p></div>
+        <div class="actions"><span class="tag planned">backend planned</span><button class="btn primary" data-needs="manager">Import contacts</button></div>
+      </div>
+      <div class="panel">
+        <header><h2>Import check · webinar-signups-oct.csv</h2><span class="pill warn">Review before saving</span></header>
+        <div class="body">
+          <div class="tiles">
+            <div class="tile"><span class="k">Rows</span><span class="v">6,544</span></div>
+            <div class="tile"><span class="k">Valid and consented</span><span class="v">6,402</span></div>
+            <div class="tile"><span class="k">Bad syntax</span><span class="v">31</span></div>
+            <div class="tile"><span class="k">Duplicates</span><span class="v">47</span></div>
+            <div class="tile"><span class="k">Missing consent fields</span><span class="v">22</span></div>
+            <div class="tile"><span class="k">On suppression list</span><span class="v">42</span></div>
+          </div>
+          <div class="tablewrap"><table class="small">
+            <thead><tr><th>Row</th><th>Email</th><th>Problem</th></tr></thead>
+            <tbody>
+              <tr><td class="num">118</td><td class="mono">jordan@@example.org</td><td><span class="pill bad">Bad syntax</span></td></tr>
+              <tr><td class="num">904</td><td class="mono">m.chen@example.com</td><td><span class="pill warn">No consent source</span> column <code>opt_in_source</code> empty</td></tr>
+              <tr><td class="num">2210</td><td class="mono">ops@example.net</td><td><span class="pill">Suppressed · complaint</span> will be skipped</td></tr>
+            </tbody>
+          </table></div>
+          <div class="actions"><button class="btn primary" data-needs="manager" data-toast="6,402 contacts saved with consent evidence.">Save 6,402 valid rows</button><button class="btn">Download problem rows</button></div>
+        </div>
+      </div>
+      <div class="panel">
+        <header><h2>Lists and segments</h2></header>
+        <div class="tablewrap"><table>
+          <thead><tr><th>Name</th><th>Type</th><th class="r">Members</th><th class="r">With consent</th><th>Refreshed</th><th>Owner</th></tr></thead>
+          <tbody>
+            <tr><td>Opted-in shoppers, last 12 months</td><td>Segment</td><td class="r num">54,184</td><td class="r num">54,184</td><td class="num small">daily 02:00</td><td>Priya N.</td></tr>
+            <tr><td>Newsletter subscribers</td><td>List</td><td class="r num">51,022</td><td class="r num">51,022</td><td class="muted small">static</td><td>Priya N.</td></tr>
+            <tr><td>Webinar registrants Oct</td><td>List</td><td class="r num">6,490</td><td class="r num">6,402</td><td class="muted small">import 13 Oct</td><td>Sam O.</td></tr>
+          </tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <!-- ============ DOMAINS ============ -->
+    <section class="page" id="p-domains" data-page="domains" hidden>
+      <div class="phead">
+        <div><h1>Domains and senders</h1><p class="sub">A domain can send only while it is Active: verified, authenticated and not paused. The DNS checker runs every 20 minutes.</p></div>
+        <div class="actions"><span class="tag built">DNS checker built (your machine)</span><button class="btn primary" data-needs="admin">Add domain</button></div>
+      </div>
+      <div class="panel">
+        <div class="tablewrap"><table>
+          <thead><tr><th>Domain</th><th>Status</th><th>SPF</th><th>DKIM</th><th>DMARC</th><th>Return-path</th><th>PTR</th><th>Warm-up</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">mail.acme.example</td><td><span class="pill ok">Active</span></td><td><span class="pill ok">pass</span></td><td><span class="pill ok">es2026a</span></td><td><span class="pill ok">p=quarantine</span></td><td><span class="pill ok">bounce.mail…</span></td><td><span class="pill ok">ok</span></td><td class="small">complete</td></tr>
+            <tr><td class="mono">notify.acme.example</td><td><span class="pill ok">Active</span></td><td><span class="pill ok">pass</span></td><td><span class="pill ok">es2026a</span></td><td><span class="pill ok">p=reject</span></td><td><span class="pill ok">bounce.notify…</span></td><td><span class="pill ok">ok</span></td><td class="small">complete</td></tr>
+            <tr class="link" style="background:var(--bad-soft)"><td class="mono">news.acme.example</td><td><span class="pill bad">Held</span></td><td><span class="pill ok">pass</span></td><td><span class="pill bad">missing</span></td><td><span class="pill warn">p=none</span></td><td><span class="pill ok">bounce.news…</span></td><td><span class="pill ok">ok</span></td><td class="small">day 6 <span class="q">Q-POL-1</span></td></tr>
+            <tr><td class="mono">promo.acme.example</td><td><span class="pill">Pending verification</span></td><td><span class="pill">-</span></td><td><span class="pill">-</span></td><td><span class="pill">-</span></td><td><span class="pill">-</span></td><td><span class="pill">-</span></td><td class="small muted">not started</td></tr>
+          </tbody>
+        </table></div>
+      </div>
+      <div class="grid split">
+        <div class="panel">
+          <header><h2>news.acme.example · DNS records</h2><button class="btn" data-toast="DNS check queued for news.acme.example.">Re-check now</button></header>
+          <div class="body" style="gap:0">
+            <div class="dnsrow"><b>SPF</b><div class="rec">TXT news.acme.example<br><b>v=spf1 ip4:203.0.113.20 -all</b></div><span class="pill ok">pass</span></div>
+            <div class="dnsrow"><b>DKIM</b><div class="rec">TXT es2026b._domainkey.news.acme.example<br>expected <b>v=DKIM1; k=rsa; p=MIIBIjAN…</b> (2048-bit)<br>found: NXDOMAIN</div><span class="pill bad">missing</span></div>
+            <div class="dnsrow"><b>DMARC</b><div class="rec">TXT _dmarc.news.acme.example<br><b>v=DMARC1; p=none; rua=mailto:dmarc@acme.example</b></div><span class="pill warn">p=none</span></div>
+            <div class="dnsrow"><b>Return-path</b><div class="rec">MX bounce.news.acme.example<br><b>10 mx-bounce.acme.example</b></div><span class="pill ok">ok</span></div>
+            <div class="dnsrow"><b>PTR</b><div class="rec">203.0.113.20 → <b>out2.acme.example</b> (matches HELO)</div><span class="pill ok">ok</span></div>
+          </div>
+        </div>
+        <div class="panel">
+          <header><h2>Sender identities</h2><button class="btn" data-needs="admin">Add sender</button></header>
+          <div class="tablewrap"><table class="small">
+            <thead><tr><th>From</th><th>Use</th><th>Owner</th></tr></thead>
+            <tbody>
+              <tr><td>Acme News<div class="mono muted">news@mail.acme.example</div></td><td>Marketing</td><td>Priya N.</td></tr>
+              <tr><td>Acme Offers<div class="mono muted">offers@mail.acme.example</div></td><td>Marketing</td><td>Priya N.</td></tr>
+              <tr><td>Acme<div class="mono muted">no-reply@notify.acme.example</div></td><td>Transactional</td><td>Dev team</td></tr>
+              <tr><td>Acme Digest<div class="mono muted">digest@news.acme.example</div></td><td>Marketing</td><td>Sam O.</td></tr>
+            </tbody>
+          </table></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ EVENTS ============ -->
+    <section class="page" id="p-events" data-page="events" hidden>
+      <div class="phead">
+        <div><h1>Bounces and complaints</h1><p class="sub">Delivery logs, bounce messages, feedback loops and unsubscribes become one event stream. Hard bounces, complaints and unsubscribes suppress immediately.</p></div>
+        <div class="actions"><span class="tag planned">backend planned · §10.8</span></div>
+      </div>
+      <div class="panel">
+        <header><h2>By recipient provider · today</h2><span class="muted small">spec §14 Provider</span></header>
+        <div class="tablewrap"><table>
+          <thead><tr><th>Provider</th><th class="r">Submitted</th><th class="r">Accepted</th><th class="r">4xx</th><th class="r">5xx</th><th class="r">Complaints</th><th>TLS</th><th>Top code</th></tr></thead>
+          <tbody>
+            <tr><td>gmail.com</td><td class="r num">28,410</td><td class="r num">99.1%</td><td class="r num">0.6%</td><td class="r num">0.3%</td><td class="r num">0.02%</td><td><span class="pill ok">100%</span></td><td class="mono small">4.7.28</td></tr>
+            <tr><td>outlook.com / hotmail.com</td><td class="r num">17,902</td><td class="r num">97.4%</td><td class="r num">2.1%</td><td class="r num">0.5%</td><td class="r num">0.05%</td><td><span class="pill ok">100%</span></td><td class="mono small">4.7.650</td></tr>
+            <tr><td>yahoo.com</td><td class="r num">8,115</td><td class="r num">98.8%</td><td class="r num">0.9%</td><td class="r num">0.3%</td><td class="r num">0.04%</td><td><span class="pill ok">100%</span></td><td class="mono small">4.7.0</td></tr>
+            <tr><td>other</td><td class="r num">8,341</td><td class="r num">98.2%</td><td class="r num">1.0%</td><td class="r num">0.8%</td><td class="r num">0.01%</td><td><span class="pill warn">93%</span></td><td class="mono small">5.1.1</td></tr>
+          </tbody>
+        </table></div>
+      </div>
+      <div class="grid split">
+        <div class="panel">
+          <header><h2>Unclassified reports · 3</h2><span class="muted small">no suppression until reviewed</span></header>
+          <div class="tablewrap"><table class="small">
+            <thead><tr><th>Received</th><th>Recipient</th><th>Raw status</th><th></th></tr></thead>
+            <tbody>
+              <tr><td class="num">23:58</td><td class="mono">k.ito@example.jp</td><td class="mono">550 Message rejected by policy</td><td><div class="actions"><button class="btn" data-needs="operator" data-toast="Marked as policy rejection; recipient suppressed.">Policy</button><button class="btn" data-needs="operator" data-toast="Marked as invalid recipient; suppressed.">Invalid</button></div></td></tr>
+              <tr><td class="num">23:41</td><td class="mono">info@example.de</td><td class="mono">Delivery Status Notification (no code)</td><td><div class="actions"><button class="btn" data-needs="operator" data-toast="Marked as soft bounce; counted.">Soft</button><button class="btn" data-needs="operator" data-toast="Dismissed.">Dismiss</button></div></td></tr>
+              <tr><td class="num">22:19</td><td class="mono">a.r@example.com</td><td class="mono">552-5.2.2 mailbox full</td><td><div class="actions"><button class="btn" data-needs="operator" data-toast="Marked as soft bounce; counted.">Soft</button><button class="btn" data-needs="operator" data-toast="Marked as hard bounce; suppressed.">Hard</button></div></td></tr>
+            </tbody>
+          </table></div>
+          <div class="body"><p class="small muted">Policy rejections and invalid recipients both suppress today. <span class="q">Q-EVT-3</span> Soft bounces are counted, never auto-suppressed. <span class="q">Q-EVT-1</span></p></div>
+        </div>
+        <div class="panel">
+          <header><h2>Latest events</h2></header>
+          <div class="tablewrap"><table class="small">
+            <thead><tr><th>Time</th><th>Type</th><th>Code</th></tr></thead>
+            <tbody>
+              <tr><td class="num">00:14:52</td><td><span class="pill ok">Accepted</span></td><td class="mono">250 2.0.0</td></tr>
+              <tr><td class="num">00:14:51</td><td><span class="pill warn">Deferred</span></td><td class="mono">421 4.7.0</td></tr>
+              <tr><td class="num">00:14:47</td><td><span class="pill bad">Hard bounce</span></td><td class="mono">550 5.1.1</td></tr>
+              <tr><td class="num">00:14:40</td><td><span class="pill bad">Complaint</span></td><td class="mono">FBL · ARF</td></tr>
+              <tr><td class="num">00:14:33</td><td><span class="pill">Unsubscribe</span></td><td class="mono">one-click POST</td></tr>
+            </tbody>
+          </table></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ SUPPRESSIONS ============ -->
+    <section class="page" id="p-suppressions" data-page="suppressions" hidden>
+      <div class="phead">
+        <div><h1>Suppression list</h1><p class="sub">A suppressed address gets no marketing email, whatever list it is on. Transactional mail is suppressed too until exceptions are reviewed. <span class="q">Q-POL-2</span></p></div>
+        <div class="actions"><span class="tag planned">backend planned · §10.9</span></div>
+      </div>
+      <div class="tiles">
+        <div class="tile"><span class="k">Total</span><span class="v">18,342</span></div>
+        <div class="tile"><span class="k">Unsubscribe</span><span class="v">11,906</span></div>
+        <div class="tile"><span class="k">Hard bounce</span><span class="v">5,118</span></div>
+        <div class="tile"><span class="k">Complaint</span><span class="v">1,071</span></div>
+        <div class="tile"><span class="k">Manual / domain</span><span class="v">247</span></div>
+      </div>
+      <div class="grid split">
+        <div class="panel">
+          <header><input id="sup-search" placeholder="Look up an address or domain" aria-label="Look up an address or domain" style="flex:1 1 220px"><div class="seg" role="group" aria-label="Reason"><button aria-pressed="true">All</button><button aria-pressed="false">Bounce</button><button aria-pressed="false">Complaint</button><button aria-pressed="false">Unsub</button></div></header>
+          <div class="tablewrap"><table class="small">
+            <thead><tr><th>Address or domain</th><th>Reason</th><th>Scope</th><th>Source</th><th>Added</th><th>Expires</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">ops@example.net</td><td><span class="pill bad">Complaint</span></td><td>Marketing</td><td class="small">FBL, Oct newsletter</td><td class="num">00:14</td><td class="muted">never</td></tr>
+              <tr><td class="mono">old.user@example.com</td><td><span class="pill bad">Hard bounce</span></td><td>All</td><td class="mono small">550 5.1.1</td><td class="num">00:14</td><td class="muted">never</td></tr>
+              <tr><td class="mono">dana.k@example.org</td><td><span class="pill">Unsubscribe</span></td><td>Marketing</td><td class="small">one-click, Oct newsletter</td><td class="num">00:14</td><td class="muted">never</td></tr>
+              <tr><td class="mono">*@competitor.example</td><td><span class="pill info">Manual</span></td><td>All</td><td class="small">Admin, legal request</td><td class="num">2 Oct</td><td class="muted">never</td></tr>
+              <tr><td class="mono">*@example-school.edu</td><td><span class="pill warn">Temporary</span></td><td>Marketing</td><td class="small">Operator, blocklist</td><td class="num">10 Oct</td><td class="num">24 Oct</td></tr>
+            </tbody>
+          </table></div>
+        </div>
+        <div class="panel">
+          <header><h2>Add a suppression</h2></header>
+          <div class="body">
+            <label class="field" for="sup-addr"><span>Address or domain</span><input id="sup-addr" placeholder="name@example.com or *@example.com"></label>
+            <div class="formrow">
+              <label class="field" for="sup-scope"><span>Scope</span><select id="sup-scope"><option>Marketing</option><option>All mail</option></select></label>
+              <label class="field" for="sup-exp"><span>Expires</span><input id="sup-exp" type="date"></label>
+            </div>
+            <label class="field" for="sup-reason"><span>Reason (kept in the audit log)</span><input id="sup-reason" placeholder="e.g. Customer asked by phone"></label>
+            <div class="actions"><button class="btn primary" data-needs="operator" data-toast="Suppression added and logged.">Add suppression</button></div>
+            <p class="small muted">Removing a suppression needs an administrator and is logged with before and after values.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ CONTROLS ============ -->
+    <section class="page" id="p-controls" data-page="controls" hidden>
+      <div class="phead">
+        <div><h1>Sending controls</h1><p class="sub">Emergency pause holds new handoffs to the mail server immediately. Messages it already accepted still complete.</p></div>
+        <div class="actions"><span class="tag planned">backend planned · §10.9</span></div>
+      </div>
+      <div class="panel">
+        <header><h2>All sending</h2><button class="btn danger solid" id="kill-btn" data-needs="admin">Pause all sending</button></header>
+        <div class="body">
+          <div class="confirm" id="kill-confirm" hidden>
+            <b>Pause every campaign, API client and route?</b>
+            <p class="small">4,118 queued jobs will be held. Nothing is lost; resume releases them in order.</p>
+            <div class="actions"><button class="btn danger solid" id="kill-yes">Pause all sending</button><button class="btn" id="kill-no">Keep sending</button></div>
+          </div>
+          <p class="small muted" id="kill-state">Running. Last paused 2 Sep 2026 by Alex R. for 14 minutes.</p>
+        </div>
+      </div>
+      <div class="grid g2">
+        <div class="panel">
+          <header><h2>Pauses</h2><span class="muted small">campaign, domain, client, pool, route</span></header>
+          <div class="switches">
+            <div class="switch"><div class="what"><b>Domain news.acme.example</b><span>Held automatically: DKIM missing</span></div><span class="pill bad">Held</span></div>
+            <div class="switch"><div class="what"><b>API client “storefront”</b><span>Transactional, 26,786 today</span></div><button class="btn" data-needs="admin" data-toast="API client storefront paused.">Pause</button></div>
+            <div class="switch"><div class="what"><b>IP pool marketing</b><span class="mono">203.0.113.10, .11</span></div><button class="btn" data-needs="admin" data-toast="IP pool marketing paused.">Pause</button></div>
+            <div class="switch"><div class="what"><b>Route outlook.com</b><span>Postfix transport “outlook”</span></div><button class="btn" data-needs="admin" data-toast="Route outlook.com paused.">Pause</button></div>
+          </div>
+        </div>
+        <div class="panel">
+          <header><h2>Rate limits</h2><button class="btn" data-needs="admin">Add limit</button></header>
+          <div class="body">
+            <div class="note warn"><b>No limits are configured.</b> Tenant, campaign, domain, provider, IP and credential limits all apply nothing until someone sets them. Do not start production traffic before this is decided. <span class="q">Q-POL-1</span></div>
+            <div class="tablewrap"><table class="small">
+              <thead><tr><th>Applies to</th><th class="r">Per hour</th><th class="r">Per day</th></tr></thead>
+              <tbody><tr><td colspan="3" class="muted">No limits yet.</td></tr></tbody>
+            </table></div>
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <header><h2>Open decisions that affect sending</h2><span class="muted small">from BUILD.md §10.12; each has a safe default</span></header>
+        <div class="tablewrap"><table class="small">
+          <thead><tr><th>ID</th><th>Question</th><th>Default until answered</th></tr></thead>
+          <tbody>
+            <tr><td><span class="q">Q-POL-1</span></td><td>Rate limits and warm-up volumes</td><td>No limits applied; console warns</td></tr>
+            <tr><td><span class="q">Q-EVT-2</span></td><td>Complaint-rate alert and auto-pause thresholds</td><td>Alert only, no auto-pause</td></tr>
+            <tr><td><span class="q">Q-CMP-1</span></td><td>What counts as high volume for mandatory approval</td><td>All marketing campaigns need approval</td></tr>
+            <tr><td><span class="q">Q-DEL-1</span></td><td>Lost SMTP reply after DATA: hold or resend</td><td>Hold for review</td></tr>
+            <tr><td><span class="q">Q-TPL-1</span></td><td>What a marketing footer must contain</td><td>Only the unsubscribe link is required</td></tr>
+          </tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <!-- ============ AUDIT ============ -->
+    <section class="page" id="p-audit" data-page="audit" hidden>
+      <div class="phead">
+        <div><h1>Audit log</h1><p class="sub">Material changes to templates, audiences, DNS, mail server settings, suppression and permissions. Append-only.</p></div>
+        <div class="actions"><span class="tag built">writer built (your machine)</span></div>
+      </div>
+      <div class="panel">
+        <header><div class="formrow" style="flex:1"><input id="au-actor" placeholder="Actor" aria-label="Actor"><select id="au-obj" aria-label="Object type"><option>All objects</option><option>Template</option><option>Campaign</option><option>Domain</option><option>Suppression</option><option>User</option></select></div></header>
+        <div class="tablewrap"><table class="small">
+          <thead><tr><th>When (UTC)</th><th>Actor</th><th>Action</th><th>Object</th><th>Change</th><th>Source IP</th></tr></thead>
+          <tbody>
+            <tr><td class="num">14 Oct 00:14</td><td>system</td><td class="mono">suppression.add</td><td>ops@example.net</td><td>reason complaint, scope marketing</td><td class="mono">-</td></tr>
+            <tr><td class="num">13 Oct 23:40</td><td>dns-checker</td><td class="mono">domain.hold</td><td>news.acme.example</td><td>Active → Held (DKIM es2026b missing)</td><td class="mono">-</td></tr>
+            <tr><td class="num">13 Oct 18:02</td><td>Priya N.</td><td class="mono">template_version.submit</td><td>October newsletter v4</td><td>Draft → Pending approval, 2 warnings</td><td class="mono">198.51.100.7</td></tr>
+            <tr><td class="num">13 Oct 11:40</td><td>Dev team</td><td class="mono">template_version.submit</td><td>Password reset v2</td><td>Draft → Pending approval</td><td class="mono">198.51.100.22</td></tr>
+            <tr><td class="num">12 Oct 16:05</td><td>Alex R.</td><td class="mono">user.role_change</td><td>Lee W.</td><td>+ Campaign Manager</td><td class="mono">198.51.100.3</td></tr>
+            <tr><td class="num">12 Oct 09:15</td><td>Morgan T.</td><td class="mono">template_version.approve</td><td>BF early access v2</td><td>Pending → Approved, checksum 9f3c…a11e</td><td class="mono">198.51.100.9</td></tr>
+          </tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <!-- ============ UNSUBSCRIBE ============ -->
+    <section class="page" id="p-unsubscribe" data-page="unsubscribe" hidden>
+      <div class="phead">
+        <div><h1>Unsubscribe page</h1><p class="sub">What a recipient sees from the link in the footer. No login. Mail clients that support one-click unsubscribe skip this page entirely.</p></div>
+        <div class="actions"><span class="tag planned">backend planned · §10.8.4</span></div>
+      </div>
+      <div class="unsub" id="unsub-card">
+        <span class="from">Acme · mail.acme.example</span>
+        <h2 style="font-size:20px">Stop marketing email to dana.k@example.org?</h2>
+        <p>You’ll stop getting newsletters and offers from Acme. Receipts and password resets still arrive.</p>
+        <div class="actions"><button class="btn primary" id="unsub-btn">Unsubscribe</button></div>
+        <p class="small muted">Scope: all Acme marketing email. <span class="q">Q-EVT-4</span></p>
+      </div>
+      <div class="unsub" id="unsub-done" hidden>
+        <span class="from">Acme · mail.acme.example</span>
+        <h2 style="font-size:20px">You’re unsubscribed</h2>
+        <p>dana.k@example.org won’t get Acme marketing email from now on. If one is already on its way, it was sent before you clicked.</p>
+        <p class="small muted">Visiting this link again changes nothing.</p>
+      </div>
+    </section>
+  </main>
+</div>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script>
+(function () {
+  const pages = [...document.querySelectorAll('[data-page]')];
+  const navs = [...document.querySelectorAll('.nav')];
+  const parentOf = { campaign: 'campaigns', editor: 'templates' };
+  function show() {
+    let id = (location.hash || '#overview').slice(1);
+    if (!pages.some(p => p.dataset.page === id)) id = 'overview';
+    pages.forEach(p => { p.hidden = p.dataset.page !== id; });
+    const navId = parentOf[id] || id;
+    navs.forEach(a => { if (a.getAttribute('href') === '#' + navId) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
+    window.scrollTo(0, 0);
+  }
+  window.addEventListener('hashchange', show);
+  show();
+
+  document.querySelectorAll('tr[data-go]').forEach(tr => tr.addEventListener('click', () => { location.hash = tr.dataset.go; }));
+
+  const toast = document.getElementById('toast');
+  let tt;
+  function say(msg) { toast.textContent = msg; toast.hidden = false; clearTimeout(tt); tt = setTimeout(() => { toast.hidden = true; }, 2600); }
+
+  // Roles: what each role may do (spec §5)
+  const can = {
+    manager: ['manager'], approver: ['approver'], operator: ['operator'],
+    admin: ['manager', 'approver', 'operator', 'admin'], analyst: []
+  };
+  const names = { manager: 'Campaign Manager', approver: 'Approver', operator: 'Deliverability Operator', admin: 'System Administrator' };
+  const roleSel = document.getElementById('role');
+  try { const r = localStorage.getItem('es-role'); if (r && can[r]) roleSel.value = r; } catch (e) {}
+  function applyRole() {
+    const allowed = can[roleSel.value];
+    document.querySelectorAll('[data-needs]').forEach(el => {
+      const ok = allowed.includes(el.dataset.needs);
+      el.setAttribute('aria-disabled', ok ? 'false' : 'true');
+      el.title = ok ? '' : 'Needs the ' + names[el.dataset.needs] + ' role';
+    });
+    try { localStorage.setItem('es-role', roleSel.value); } catch (e) {}
+  }
+  roleSel.addEventListener('change', applyRole);
+  applyRole();
+
+  document.addEventListener('click', e => {
+    const el = e.target.closest('[data-needs], [data-toast]');
+    if (!el) return;
+    if (el.getAttribute('aria-disabled') === 'true') { e.preventDefault(); say(el.title || 'Not available'); return; }
+    if (el.dataset.note) {
+      const n = document.getElementById(el.dataset.note);
+      if (!n.value.trim()) { e.preventDefault(); n.focus(); say('Add a note so the author knows what to change.'); return; }
+    }
+    if (el.dataset.toast) { e.preventDefault(); say(el.dataset.toast); }
+  });
+
+  document.querySelectorAll('.seg').forEach(seg => seg.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    seg.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b ? 'true' : 'false'));
+    if (b.dataset.w) {
+      const mail = document.getElementById('mail');
+      document.getElementById('pv-html').hidden = b.dataset.w === 'text';
+      document.getElementById('pv-text').hidden = b.dataset.w !== 'text';
+      mail.classList.toggle('narrow', b.dataset.w === 'narrow');
+    }
+  }));
+
+  // Editor: a few of the real preflight rules, run live on the textareas
+  const html = document.getElementById('ed-html'), text = document.getElementById('ed-text'), subj = document.getElementById('ed-subject');
+  const pfList = document.getElementById('pf-list'), pfSum = document.getElementById('pf-sum'), submit = document.getElementById('submit-btn');
+  function preflight() {
+    const f = [];
+    const h = html.value, t = text.value, s = subj.value;
+    if (/href\s*=\s*["'](#?)["']/i.test(h)) f.push(['FAIL', 'EMPTY_LINK', 'A link has href="#" or an empty href.']);
+    if (/href\s*=\s*["']\s*(javascript|data|vbscript):/i.test(h)) f.push(['FAIL', 'UNSAFE_LINK', 'javascript:, data: or vbscript: link.']);
+    if (/<(script|iframe|object|embed|form)\b|\son\w+\s*=/i.test(h)) f.push(['FAIL', 'UNSAFE_ELEMENT', 'Scripts, frames, forms and on* handlers are not allowed.']);
+    if (/\|\s*safe|{%\s*(load|include|extends|url|now)\b/.test(h + t + s)) f.push(['FAIL', 'DISALLOWED_TAG', 'That tag or filter is not in the allowlist.']);
+    if (!t.trim()) f.push(['FAIL', 'EMPTY_TEXT', 'A plain-text part is required.']);
+    if (/[\r\n]/.test(s)) f.push(['FAIL', 'SUBJECT_HEADER_INJECTION', 'Subject contains a line break.']);
+    const imgs = h.match(/<img\b[^>]*>/gi) || [];
+    if (imgs.some(i => !/\balt\s*=/.test(i))) f.push(['WARN', 'IMG_MISSING_ALT', 'An image has no alt text.']);
+    if (/https?:\/\/(bit\.ly|tinyurl\.com|t\.co|goo\.gl)\//i.test(h + t)) f.push(['WARN', 'URL_SHORTENER', 'Link shorteners hurt reputation.']);
+    const fails = f.filter(x => x[0] === 'FAIL').length, warns = f.length - fails;
+    pfList.innerHTML = '';
+    f.forEach(([lvl, code, msg]) => {
+      const d = document.createElement('div'); d.className = 'finding';
+      d.innerHTML = '<span class="lvl ' + lvl + '">' + lvl + '</span><div><code></code><p class="muted small"></p></div>';
+      d.querySelector('code').textContent = code; d.querySelector('p').textContent = msg;
+      pfList.appendChild(d);
+    });
+    if (!f.length) { const d = document.createElement('div'); d.className = 'finding'; d.innerHTML = '<span class="lvl PASS">PASS</span><div>All checks pass for the sample data.</div>'; pfList.appendChild(d); }
+    pfSum.textContent = fails + ' fail · ' + warns + ' warn';
+    pfSum.className = 'pill ' + (fails ? 'bad' : warns ? 'warn' : 'ok');
+    submit.disabled = fails > 0;
+    submit.dataset.toast = fails ? '' : 'v7 submitted. It is now frozen and waiting for an approver.';
+  }
+  [html, text, subj].forEach(el => el.addEventListener('input', preflight));
+  preflight();
+
+  // Emergency pause
+  const kb = document.getElementById('kill-btn'), kc = document.getElementById('kill-confirm');
+  let paused = false;
+  kb.addEventListener('click', () => {
+    if (kb.getAttribute('aria-disabled') === 'true') return;
+    if (paused) { setPaused(false); return; }
+    kc.hidden = false;
+  });
+  document.getElementById('kill-no').addEventListener('click', () => { kc.hidden = true; });
+  document.getElementById('kill-yes').addEventListener('click', () => { kc.hidden = true; setPaused(true); });
+  function setPaused(p) {
+    paused = p;
+    document.getElementById('sendstate').classList.toggle('paused', p);
+    document.getElementById('sendstate-text').textContent = p ? 'All sending paused' : 'All sending running';
+    kb.textContent = p ? 'Resume sending' : 'Pause all sending';
+    kb.classList.toggle('solid', !p);
+    document.getElementById('kill-state').textContent = p ? 'Paused just now by you. 4,118 jobs held.' : 'Running. Resumed just now.';
+    say(p ? 'All sending paused.' : 'Sending resumed.');
+  }
+
+  document.getElementById('unsub-btn').addEventListener('click', () => {
+    document.getElementById('unsub-card').hidden = true;
+    document.getElementById('unsub-done').hidden = false;
+  });
+})();
+</script>

@@ -1,0 +1,77 @@
+- name: Refuse a weak password
+  ansible.builtin.assert:
+    that: rabbitmq_password | length >= 32
+    fail_msg: rabbitmq_password (vault_rabbitmq_password) must be at least 32 characters.
+
+- name: Package (Debian 12 ships 3.10 — quorum queues and the Prometheus plugin included)
+  ansible.builtin.apt:
+    name: rabbitmq-server
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Configuration
+  ansible.builtin.copy:
+    dest: /etc/rabbitmq/rabbitmq.conf
+    owner: rabbitmq
+    group: rabbitmq
+    mode: "0640"
+    content: |
+      listeners.tcp.1 = {{ rabbitmq_listen }}:{{ rabbitmq_port }}
+      listeners.tcp.2 = 127.0.0.1:{{ rabbitmq_port }}
+      loopback_users.guest = true
+      vm_memory_high_watermark.relative = {{ rabbitmq_memory_high_watermark }}
+      disk_free_limit.absolute = {{ rabbitmq_disk_free_limit }}
+      prometheus.tcp.port = 15692
+  notify: Restart rabbitmq
+
+- name: Plugins (Prometheus metrics on :15692)
+  ansible.builtin.copy:
+    dest: /etc/rabbitmq/enabled_plugins
+    owner: rabbitmq
+    group: rabbitmq
+    mode: "0644"
+    content: "[rabbitmq_prometheus].\n"
+  notify: Restart rabbitmq
+
+- name: Running
+  ansible.builtin.systemd:
+    name: rabbitmq-server
+    enabled: true
+    state: started
+
+- name: Apply now
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait until the node is up
+  ansible.builtin.command: rabbitmq-diagnostics -q check_running
+  register: rabbit_up
+  until: rabbit_up.rc == 0
+  retries: 30
+  delay: 2
+  changed_when: false
+
+- name: Existing users
+  ansible.builtin.command: rabbitmqctl -q list_users
+  register: rabbit_users
+  changed_when: false
+
+- name: Application user
+  ansible.builtin.command: rabbitmqctl add_user {{ rabbitmq_user }} "{{ rabbitmq_password }}"
+  when: rabbitmq_user not in rabbit_users.stdout
+  no_log: true
+  changed_when: true
+
+- name: Application user's password is current
+  ansible.builtin.command: rabbitmqctl change_password {{ rabbitmq_user }} "{{ rabbitmq_password }}"
+  no_log: true
+  changed_when: false
+
+- name: Application user may use the vhost
+  ansible.builtin.command: rabbitmqctl set_permissions -p {{ rabbitmq_vhost }} {{ rabbitmq_user }} ".*" ".*" ".*"
+  changed_when: false
+
+- name: No default guest account
+  ansible.builtin.command: rabbitmqctl delete_user guest
+  when: "'guest' in rabbit_users.stdout"
+  changed_when: true

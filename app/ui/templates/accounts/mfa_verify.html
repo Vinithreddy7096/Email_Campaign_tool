@@ -1,0 +1,18 @@
+{% extends "console/public.html" %}
+{% block title %}Two-factor verification · Email Platform{% endblock %}
+
+{% block card %}
+  <span class="from">Email Platform · operations console</span>
+  <h1>Two-factor verification</h1>
+  <p>Enter the 6-digit code from your authenticator app.</p>
+  {% if error %}<div class="note bad" role="alert">{{ error }}</div>{% endif %}
+  {% if not locked %}
+  <form method="post" class="stack" style="gap:12px">{% csrf_token %}
+    <input type="hidden" name="next" value="{{ next }}">
+    <label class="field" for="code"><span>6-digit code</span>
+      <input id="code" name="code" class="codeinput" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" required autofocus></label>
+    <button class="btn primary" type="submit">Verify</button>
+  </form>
+  {% endif %}
+  <p class="small muted">Lost your device? An administrator can reset it with <code>manage.py reset_mfa &lt;email&gt;</code> or the admin's “Reset MFA” action.</p>
+{% endblock %}

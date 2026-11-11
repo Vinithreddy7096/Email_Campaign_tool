@@ -1,0 +1,4 @@
+- name: Restart opendkim
+  ansible.builtin.systemd:
+    name: opendkim
+    state: restarted

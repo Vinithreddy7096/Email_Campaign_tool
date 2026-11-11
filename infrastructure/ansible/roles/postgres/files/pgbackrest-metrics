@@ -1,0 +1,75 @@
+#!/usr/bin/env python3
+"""Backup and WAL-archive health for Prometheus (node_exporter textfile collector).
+
+Run every minute by pgbackrest-metrics.timer as the postgres user. Writes
+<textfile dir>/pgbackrest.prom atomically:
+
+  pgbackrest_last_backup_timestamp_seconds{type="full|diff|incr"}  stop time of the newest backup
+  pgbackrest_info_ok                                               1 if `pgbackrest info` worked
+  pg_wal_archive_last_success_timestamp_seconds                    pg_stat_archiver.last_archived_time
+  pg_wal_archive_failed_total                                      pg_stat_archiver.failed_count
+  pg_wal_archive_last_failure_timestamp_seconds                    pg_stat_archiver.last_failed_time
+
+Alerts in monitoring/prometheus/rules/mailer.rules.yml (group mailer-backups).
+"""
+
+import json
+import os
+import subprocess
+import sys
+
+STANZA = os.environ.get("PGBACKREST_STANZA", "mailer")
+OUT_DIR = os.environ.get("TEXTFILE_DIR", "/var/lib/node_exporter/textfile")
+
+
+def run(args):
+    return subprocess.run(args, capture_output=True, text=True, timeout=120, check=True).stdout
+
+
+def main():
+    lines = []
+
+    def gauge(name, value, labels="", help_text=""):
+        if not any(line.startswith(f"# TYPE {name} ") for line in lines):
+            lines.append(f"# HELP {name} {help_text or name}")
+            lines.append(f"# TYPE {name} gauge")
+        lines.append(f"{name}{labels} {float(value)}")
+
+    try:
+        info = json.loads(run(["pgbackrest", f"--stanza={STANZA}", "--output=json", "info"]))
+        newest = {}
+        for stanza in info:
+            for backup in stanza.get("backup", []):
+                kind, stop = backup["type"], backup["timestamp"]["stop"]
+                newest[kind] = max(newest.get(kind, 0), stop)
+        for kind in ("full", "diff", "incr"):
+            if kind in newest:
+                gauge("pgbackrest_last_backup_timestamp_seconds", newest[kind], f'{{type="{kind}"}}',
+                      "Stop time of the newest pgBackRest backup of this type.")
+        gauge("pgbackrest_info_ok", 1, help_text="1 if pgbackrest info succeeded.")
+    except (subprocess.SubprocessError, ValueError, KeyError, OSError) as exc:
+        print(f"pgbackrest-metrics: info failed: {exc}", file=sys.stderr)
+        gauge("pgbackrest_info_ok", 0, help_text="1 if pgbackrest info succeeded.")
+
+    try:
+        row = run(["psql", "-X", "-At", "-F", " ", "-c",
+                   "SELECT coalesce(extract(epoch FROM last_archived_time), 0), failed_count, "
+                   "coalesce(extract(epoch FROM last_failed_time), 0) FROM pg_stat_archiver"]).split()
+        gauge("pg_wal_archive_last_success_timestamp_seconds", row[0],
+              help_text="When the last WAL segment was archived.")
+        gauge("pg_wal_archive_failed_total", row[1], help_text="Failed WAL archive attempts since stats reset.")
+        gauge("pg_wal_archive_last_failure_timestamp_seconds", row[2],
+              help_text="When WAL archiving last failed (0: never).")
+    except (subprocess.SubprocessError, IndexError, OSError) as exc:
+        print(f"pgbackrest-metrics: pg_stat_archiver failed: {exc}", file=sys.stderr)
+
+    target = os.path.join(OUT_DIR, "pgbackrest.prom")
+    tmp = target + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as handle:
+        handle.write("\n".join(lines) + "\n")
+    os.replace(tmp, target)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,76 @@
+# OpenDKIM signing milter (BUILD.md §10.10). Keys from the vault only.
+- name: Every signing domain has its private key in the vault
+  ansible.builtin.assert:
+    that:
+      - opendkim_private_keys[item.domain] is defined
+      - opendkim_private_keys[item.domain][item.selector] is defined
+    fail_msg: >-
+      No key for {{ item.selector }}._domainkey.{{ item.domain }} in vault_dkim_private_keys.
+      Generate one (opendkim-genkey -b 2048), publish the public half in DNS, and add the
+      private half to the vault.
+    quiet: true
+  loop: "{{ mta_maps.signing }}"
+
+- name: Packages
+  ansible.builtin.apt:
+    name: [opendkim, opendkim-tools]
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Key directories (opendkim only)
+  ansible.builtin.file:
+    path: "{{ opendkim_key_dir }}/{{ item }}"
+    state: directory
+    owner: opendkim
+    group: opendkim
+    mode: "0700"
+  loop: "{{ [''] + (mta_maps.signing | map(attribute='domain') | unique | list) }}"
+
+- name: Private keys
+  ansible.builtin.copy:
+    dest: "{{ opendkim_key_dir }}/{{ item.domain }}/{{ item.selector }}.private"
+    content: "{{ opendkim_private_keys[item.domain][item.selector] }}"
+    owner: opendkim
+    group: opendkim
+    mode: "0600"
+  loop: "{{ mta_maps.signing }}"
+  no_log: true
+  notify: Restart opendkim
+
+- name: OpenDKIM configuration
+  ansible.builtin.template:
+    src: "{{ mta_source_dir }}/opendkim/opendkim.conf.j2"
+    dest: /etc/opendkim.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart opendkim
+
+- name: Signing tables
+  ansible.builtin.template:
+    src: "{{ mta_source_dir }}/opendkim/{{ item }}.j2"
+    dest: "/etc/opendkim/{{ item }}"
+    owner: root
+    group: opendkim
+    mode: "0640"
+  loop: [KeyTable, SigningTable, TrustedHosts]
+  notify: Restart opendkim
+
+- name: Check the configuration
+  ansible.builtin.command: opendkim -n -x /etc/opendkim.conf
+  changed_when: false
+
+- name: Every key loads and matches its DNS record
+  ansible.builtin.command: >-
+    opendkim-testkey -d {{ item.domain }} -s {{ item.selector }}
+    -k {{ opendkim_key_dir }}/{{ item.domain }}/{{ item.selector }}.private -vvv
+  loop: "{{ mta_maps.signing }}"
+  changed_when: false
+  when: opendkim_testkey_dns | default(true) | bool
+
+- name: OpenDKIM running
+  ansible.builtin.systemd:
+    name: opendkim
+    enabled: true
+    state: started

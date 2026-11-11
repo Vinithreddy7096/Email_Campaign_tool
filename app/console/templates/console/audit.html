@@ -1,0 +1,43 @@
+{% extends "console/base.html" %}
+{% block title %}Audit log{% endblock %}
+
+{% block content %}
+<div class="phead">
+  <div><h1>Audit log</h1><p class="sub">Material changes to templates, campaigns, domains, suppression, pauses and permissions. Append-only: the database refuses edits and deletes.</p></div>
+</div>
+<div class="panel">
+  <header>
+    <form method="get" class="formrow" style="flex:1">
+      <input name="actor" value="{{ actor }}" placeholder="Actor (email or system label)" aria-label="Actor">
+      <select name="obj" aria-label="Object type" onchange="this.form.submit()">{% for value, label in object_types %}<option value="{{ value }}" {% if value == obj %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+      <button class="btn" type="submit">Filter</button>
+    </form>
+    <span class="muted small">{{ page_obj.paginator.count }} event{{ page_obj.paginator.count|pluralize }}</span>
+  </header>
+  {% if page_obj.object_list %}
+  <div class="tablewrap"><table class="small">
+    <thead><tr><th>When (UTC)</th><th>Actor</th><th>Action</th><th>Object</th><th>Change</th></tr></thead>
+    <tbody>{% for e in page_obj %}
+      <tr>
+        <td class="num">{{ e.created_at|date:"j M H:i:s" }}</td>
+        <td>{% if e.actor %}{{ e.actor.email }}{% else %}<span class="muted">{{ e.actor_label }}</span>{% endif %}</td>
+        <td class="mono">{{ e.action }}</td>
+        <td class="mono">{{ e.target_type|default:"—" }}{% if e.target_id %}<div class="muted">{{ e.target_id|truncatechars:20 }}</div>{% endif %}</td>
+        <td>{% if e.before.status and e.after.status %}{{ e.before.status }} → {{ e.after.status }}{% endif %}
+            {% for k, v in e.metadata.items %}<div class="muted">{{ k }}: {{ v|truncatechars:80 }}</div>{% endfor %}
+            {% if e.after.note %}<div class="muted">note: {{ e.after.note|truncatechars:80 }}</div>{% endif %}</td>
+      </tr>{% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}<p class="empty">No events match.</p>{% endif %}
+  {% if page_obj.has_other_pages %}
+  <header style="border-top:1px solid var(--line);border-bottom:0">
+    <span class="small muted">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+    <div class="actions">
+      {% if page_obj.has_previous %}<a class="btn" href="?page={{ page_obj.previous_page_number }}&actor={{ actor|urlencode }}&obj={{ obj|urlencode }}">Newer</a>{% endif %}
+      {% if page_obj.has_next %}<a class="btn" href="?page={{ page_obj.next_page_number }}&actor={{ actor|urlencode }}&obj={{ obj|urlencode }}">Older</a>{% endif %}
+    </div>
+  </header>
+  {% endif %}
+</div>
+{% endblock %}

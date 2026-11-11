@@ -1,0 +1,26 @@
+# Values for the throwaway test MTA (mta/test/run.sh, CI job "mta").
+# Network layout on the test bridge 10.250.0.0/24:
+#   10.250.0.10   the MTA under test
+#   10.250.0.20   an "outside" client (must not be able to relay)
+#   10.250.0.130  an "app" client inside postfix_app_networks
+# The bridge gateway (10.250.0.1) is outside the app network on purpose.
+env_name: test
+postfix_hostname: mta-test.example.test
+postfix_mydomain: example.test
+postfix_app_networks: [10.250.0.128/25]
+postfix_streams:
+  - name: marketing
+    bind_address: ""
+    helo_name: mta-test.example.test
+    relayhost: "[127.0.0.1]:2526"   # the capture sink in intake_stub.py
+  - name: transactional
+    bind_address: ""
+    helo_name: mta-test.example.test
+mta_maps:
+  signing:
+    - {domain: news.example.test, selector: s2026}
+    - {domain: notify.example.test, selector: s2026}
+  sender_transport:
+    - {return_path_domain: bounce.news.example.test, stream: marketing}
+    - {return_path_domain: bounce.notify.example.test, stream: transactional}
+  bounce_domains: [bounce.news.example.test, bounce.notify.example.test]

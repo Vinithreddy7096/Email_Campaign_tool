@@ -1,0 +1,46 @@
+{% extends "console/base.html" %}
+{% load console %}
+{% block title %}Suppression list{% endblock %}
+
+{% block content %}
+<div class="phead">
+  <div><h1>Suppression list</h1><p class="sub">A suppressed address gets no marketing email, whatever list it is on. Transactional mail is suppressed too until exceptions are reviewed. <span class="q">Q-POL-2</span></p></div>
+</div>
+<div class="tiles">
+  <div class="tile"><span class="k">Total active</span><span class="v">{{ tiles.total|num }}</span></div>
+  <div class="tile"><span class="k">Unsubscribe</span><span class="v">{{ tiles.unsub|num }}</span></div>
+  <div class="tile"><span class="k">Bounce</span><span class="v">{{ tiles.bounce|num }}</span></div>
+  <div class="tile"><span class="k">Complaint</span><span class="v">{{ tiles.complaint|num }}</span></div>
+  <div class="tile"><span class="k">Manual / domain</span><span class="v">{{ tiles.manual|num }}</span></div>
+</div>
+<div class="grid split">
+  <div class="panel">
+    <header>
+      <form method="get" style="flex:1 1 220px;display:flex"><input type="search" name="q" value="{{ query }}" placeholder="Look up an address or domain" aria-label="Look up an address or domain" style="flex:1">{% for t in tabs %}{% if t.current %}<input type="hidden" name="f" value="{{ t.key }}">{% endif %}{% endfor %}</form>
+      <nav class="seg" aria-label="Reason">{% for t in tabs %}<a href="?f={{ t.key }}{% if query %}&q={{ query|urlencode }}{% endif %}" {% if t.current %}aria-current="true"{% endif %}>{{ t.label }}</a>{% endfor %}</nav>
+    </header>
+    {% if rows %}
+    <div class="tablewrap"><table class="small">
+      <thead><tr><th>Address or domain</th><th>Reason</th><th>Scope</th><th>Source</th><th>Added</th></tr></thead>
+      <tbody>{% for s in rows %}
+        <tr>
+          <td class="mono">{% if s.domain %}*@{{ s.domain }}{% elif s.email %}{{ s.email }}{% else %}<span class="muted">erased · {{ s.email_hash|truncatechars:13 }}</span>{% endif %}</td>
+          <td>{% pill s.reason s.get_reason_display %}</td>
+          <td>{% if s.scope == "GLOBAL" %}All mail{% elif s.scope == "STREAM" %}{{ s.get_stream_display }}{% else %}List “{{ s.contact_list.name }}”{% endif %}</td>
+          <td class="small">{{ s.source|default:"—"|truncatechars:60 }}{% if s.created_by %}<div class="muted">{{ s.created_by.email }}</div>{% endif %}</td>
+          <td class="num">{{ s.created_at|date:"j M H:i" }}</td>
+        </tr>{% endfor %}
+      </tbody>
+    </table></div>
+    {% else %}<p class="empty">{% if query %}Not suppressed: no active entry matches “{{ query }}”.{% else %}No active suppressions.{% endif %}</p>{% endif %}
+  </div>
+  <div class="panel">
+    <header><h2>Add a suppression</h2></header>
+    <form method="post" class="body">{% csrf_token %}
+      {% include "console/_form_fields.html" %}
+      <div class="actions"><button class="btn primary" type="submit" {% if not perms.suppression.add_suppression %}disabled title="Needs the System Administrator role"{% endif %}>Add suppression</button></div>
+      <p class="small muted">Suppressions are never deleted. “All mail” suppressions can never be lifted; marketing ones can be lifted in the admin by a named user with a reason, which is audited.</p>
+    </form>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,64 @@
+{% extends "console/base.html" %}
+{% load console %}
+{% block title %}Domains and senders{% endblock %}
+
+{% block content %}
+<div class="phead">
+  <div><h1>Domains and senders</h1><p class="sub">A domain can send only while it is Active: verified and not paused. The DNS checker re-runs every 6 hours and pauses an Active domain whose SPF, DKIM or DMARC breaks.</p></div>
+  <div class="actions">{% if perms.domains.add_sendingdomain %}<a class="btn primary" href="/admin/domains/sendingdomain/add/">Add domain</a>{% endif %}</div>
+</div>
+<div class="panel">
+  {% if rows %}
+  <div class="tablewrap"><table>
+    <thead><tr><th>Domain</th><th>Status</th><th>SPF</th><th>DKIM</th><th>DMARC</th><th>Return-path</th><th>PTR</th><th>Warm-up</th></tr></thead>
+    <tbody>{% for row in rows %}
+      <tr class="link" data-href="?d={{ row.d.pk }}" {% if selected and row.d.pk == selected.pk %}style="background:var(--sunk)"{% endif %}>
+        <td class="mono"><a class="rowlink" href="?d={{ row.d.pk }}">{{ row.d.domain }}</a><div class="small muted">{{ row.d.get_stream_display }}</div></td>
+        <td>{% pill row.d.status row.d.get_status_display "domain" %}</td>
+        {% with c=row.dns %}
+        <td>{% if c.spf %}{% pill c.spf.status %}{% else %}<span class="muted">—</span>{% endif %}</td>
+        <td>{% if c.dkim %}{% pill c.dkim.status row.d.dkim_selector %}{% else %}<span class="muted">—</span>{% endif %}</td>
+        <td>{% if c.dmarc %}{% pill c.dmarc.status %}{% else %}<span class="muted">—</span>{% endif %}</td>
+        <td>{% if c.return_path_mx %}{% pill c.return_path_mx.status %}{% else %}<span class="muted">—</span>{% endif %}</td>
+        <td>{% if c.ptr %}{% pill c.ptr.status %}{% else %}<span class="muted">—</span>{% endif %}</td>
+        {% endwith %}
+        <td class="small">not configured <span class="q">Q-POL-1</span></td>
+      </tr>{% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}<p class="empty">No sending domains yet.</p>{% endif %}
+</div>
+
+<div class="grid split">
+  <div class="panel">
+    {% if selected %}
+    <header><h2>{{ selected.domain }} · DNS records</h2>
+      <form method="post">{% csrf_token %}<input type="hidden" name="domain" value="{{ selected.pk }}">
+        <button class="btn" name="action" value="recheck" {% if not perms.domains.change_sendingdomain %}disabled title="Needs the System Administrator role"{% endif %}>Re-check now</button></form>
+    </header>
+    <div class="body flush">
+      {% for r in selected_report %}
+        <div class="dnsrow"><b>{{ r.label }}</b>
+          <div class="rec">{{ r.detail }}{% if r.record %}<br><b>{{ r.record }}</b>{% endif %}</div>
+          {% pill r.status %}
+        </div>
+      {% empty %}
+        <p class="empty">{% if selected.last_dns_check_at %}The last check predates per-record reports.{% else %}Not checked yet.{% endif %} Use “Re-check now” to see each record.</p>
+      {% endfor %}
+      {% if selected.last_dns_check_at %}<p class="small muted" style="padding:8px 0">Last checked {{ selected.last_dns_check_at|date:"j M Y H:i" }} UTC.</p>{% endif %}
+    </div>
+    {% else %}
+      <p class="empty">Select a domain.</p>
+    {% endif %}
+  </div>
+  <div class="panel">
+    <header><h2>Sender identities</h2>{% if perms.domains.add_senderidentity %}<a class="btn" href="/admin/domains/senderidentity/add/">Add sender</a>{% endif %}</header>
+    {% if senders %}
+    <div class="tablewrap"><table class="small">
+      <thead><tr><th>From</th><th>Use</th><th>Status</th></tr></thead>
+      <tbody>{% for s in senders %}<tr><td>{{ s.display_name }}<div class="mono muted">{{ s.from_address }}</div></td><td>{{ s.domain.get_stream_display }}</td><td>{% if s.is_active %}<span class="pill ok">Active</span>{% else %}<span class="pill">Inactive</span>{% endif %}</td></tr>{% endfor %}</tbody>
+    </table></div>
+    {% else %}<p class="empty">No sender identities yet.</p>{% endif %}
+  </div>
+</div>
+{% endblock %}

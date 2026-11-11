@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+{% include "console/_head.html" %}
+<title>{% block title %}Console{% endblock %} · Email Platform</title>
+</head>
+<body>
+{% include "console/_safety.html" %}
+<div class="app">
+  <nav class="rail" aria-label="Sections">
+    <a class="brand" href="{% url 'console:today' %}">{% include "console/_brand.svg.html" %}<b>Email Platform<small>Operations console</small></b></a>
+    <div class="navs">
+      <div class="navgroup">
+        <span class="lbl">Overview</span>
+        <a class="nav" href="{% url 'console:today' %}" {% if nav == "overview" %}aria-current="page"{% endif %}>Today</a>
+      </div>
+      <div class="navgroup">
+        <span class="lbl">Sending</span>
+        <a class="nav" href="{% url 'console:campaigns' %}" {% if nav == "campaigns" %}aria-current="page"{% endif %}>Campaigns <span class="count">{{ counts.campaigns }}</span></a>
+        <a class="nav" href="{% url 'console:templates' %}" {% if nav == "templates" %}aria-current="page"{% endif %}>Templates <span class="count">{{ counts.templates }}</span></a>
+        <a class="nav" href="{% url 'console:approvals' %}" {% if nav == "approvals" %}aria-current="page"{% endif %}>Approvals {% if counts.approvals %}<span class="count">{{ counts.approvals }}</span>{% endif %}</a>
+        <a class="nav" href="{% url 'console:audience' %}" {% if nav == "audience" %}aria-current="page"{% endif %}>Contacts and consent</a>
+      </div>
+      <div class="navgroup">
+        <span class="lbl">Deliverability</span>
+        <a class="nav" href="{% url 'console:domains' %}" {% if nav == "domains" %}aria-current="page"{% endif %}>Domains and senders</a>
+        <a class="nav" href="{% url 'console:events' %}" {% if nav == "events" %}aria-current="page"{% endif %}>Bounces and complaints {% if counts.review %}<span class="count">{{ counts.review }}</span>{% endif %}</a>
+        <a class="nav" href="{% url 'console:suppressions' %}" {% if nav == "suppressions" %}aria-current="page"{% endif %}>Suppression list</a>
+        <a class="nav" href="{% url 'console:controls' %}" {% if nav == "controls" %}aria-current="page"{% endif %}>Sending controls</a>
+      </div>
+      <div class="navgroup">
+        <span class="lbl">Governance</span>
+        <a class="nav" href="{% url 'console:audit' %}" {% if nav == "audit" %}aria-current="page"{% endif %}>Audit log</a>
+        <a class="nav" href="{% url 'console:unsubscribe' %}" {% if nav == "unsubscribe" %}aria-current="page"{% endif %}>Unsubscribe page</a>
+        <a class="nav" href="/admin/">Admin (low-level)</a>
+      </div>
+    </div>
+    <div class="role">
+      <span>Signed in as</span>
+      <b>{{ user.email }}</b>
+      <div class="rolechips">{% for r in user_roles %}<span class="tag">{{ r }}</span>{% empty %}<span class="tag">no role</span>{% endfor %}</div>
+      <form method="post" action="{% url 'console:logout' %}">{% csrf_token %}<button class="btn" type="submit">Sign out</button></form>
+    </div>
+  </nav>
+
+  <main class="main">
+    <div class="topbar">
+      <span class="sendstate {{ send_state.tone }}" title="{{ send_state.detail }}"><span class="dot"></span><span>{{ send_state.text }}</span></span>
+      {% if send_state.detail %}<span class="muted">· {{ send_state.detail }}</span>{% endif %}
+      <span>·</span><span>{{ ENVIRONMENT|capfirst }}</span>
+      <span class="spacer"></span>
+      {% if not MFA_ENFORCED %}<span class="q" title="MFA_ENFORCED=false — local development only">MFA off</span>{% endif %}
+      {% if MOCK_MODE %}<a class="tag" href="http://localhost:8025" target="_blank" rel="noreferrer">MailHog sink ↗</a>{% endif %}
+    </div>
+    <section class="page">{% block content %}{% endblock %}</section>
+  </main>
+</div>
+
+{% if messages %}
+<div class="toasts" role="status" aria-live="polite">
+  {% for m in messages %}<div class="toast {{ m.tags }}">{{ m }}</div>{% endfor %}
+</div>
+{% endif %}
+<script>
+/* Toasts fade after a while; errors stay until clicked. */
+document.querySelectorAll('.toast').forEach(function (t) {
+  t.addEventListener('click', function () { t.remove(); });
+  if (!t.classList.contains('error')) setTimeout(function () { t.remove(); }, 6000);
+});
+/* Whole-row links (tr[data-href]) */
+document.querySelectorAll('tr[data-href]').forEach(function (tr) {
+  tr.addEventListener('click', function (e) { if (!e.target.closest('a,button,form')) location.href = tr.dataset.href; });
+});
+/* Confirm panels: [data-confirm-open="id"] reveals #id, [data-confirm-close] hides its panel. */
+document.querySelectorAll('[data-confirm-open]').forEach(function (b) {
+  b.addEventListener('click', function () { document.getElementById(b.dataset.confirmOpen).hidden = false; });
+});
+document.querySelectorAll('[data-confirm-close]').forEach(function (b) {
+  b.addEventListener('click', function () { b.closest('.confirm').hidden = true; });
+});
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

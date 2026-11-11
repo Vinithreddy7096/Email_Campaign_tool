@@ -1,0 +1,52 @@
+# PostgreSQL 16 (PGDG) with continuous WAL archiving and base backups by
+# pgBackRest — point-in-time recovery to any second inside the retention window.
+# The nightly logical dump (deploy/backup) stays as a second, independent copy.
+
+postgres_version: 16
+postgres_data_dir: "/var/lib/postgresql/{{ postgres_version }}/main"
+postgres_conf_dir: "/etc/postgresql/{{ postgres_version }}/main"
+
+# Listen on loopback + this host's private address only.
+postgres_listen_addresses: "localhost,{{ ansible_default_ipv4.address | default('127.0.0.1') }}"
+postgres_port: 5432
+# Who may connect (scram-sha-256 over the network). Never 0.0.0.0/0.
+postgres_app_networks: [10.10.0.0/24]
+
+# Sizing: set per host. These suit a 4 GB machine.
+postgres_max_connections: 200
+postgres_shared_buffers: 1GB
+postgres_effective_cache_size: 3GB
+postgres_work_mem: 16MB
+postgres_maintenance_work_mem: 256MB
+
+postgres_db: mailer
+postgres_app_user: mailer
+postgres_app_password: "{{ vault_postgres_app_password }}"
+# Read-only role for the logical dumps (scripts/backup/pgbackup.py).
+postgres_backup_user: backup_reader
+postgres_backup_password: "{{ vault_postgres_backup_password }}"
+
+# ─── pgBackRest ──────────────────────────────────────────────────────────
+pgbackrest_stanza: mailer
+pgbackrest_repo_type: s3                 # s3 | posix
+pgbackrest_repo_path: "/pgbackrest/{{ env_name | default('production') }}"
+pgbackrest_s3_bucket: example-mailer-pitr
+pgbackrest_s3_endpoint: s3.eu-west-1.amazonaws.com
+pgbackrest_s3_port: 443
+pgbackrest_s3_region: eu-west-1
+pgbackrest_s3_uri_style: host            # path for MinIO
+pgbackrest_s3_verify_tls: true
+pgbackrest_s3_key: "{{ vault_pgbackrest_s3_key }}"
+pgbackrest_s3_key_secret: "{{ vault_pgbackrest_s3_key_secret }}"
+# Client-side encryption: the bucket never sees plain data.
+pgbackrest_cipher_pass: "{{ vault_pgbackrest_cipher_pass }}"
+# Two full backups kept (≈ two weeks with weekly fulls); WAL kept as long as
+# the oldest full needs it. Recovery is possible to any point since then.
+pgbackrest_retention_full: 2
+pgbackrest_full_schedule: "Sun *-*-* 01:00:00 UTC"
+pgbackrest_diff_schedule: "Mon..Sat *-*-* 01:00:00 UTC"
+# Force a WAL switch at least this often, so at most this many seconds of
+# commits are at risk if the host is lost.
+postgres_archive_timeout: 60
+
+node_exporter_textfile_dir: /var/lib/node_exporter/textfile

@@ -1,0 +1,6 @@
+# {{ ansible_managed | default("Rendered from mta/opendkim/KeyTable.j2 — do not edit on the host") }}
+# Source: manage.py export_mta_maps (signing). Private keys come from the
+# secret store via Ansible — never from Git (spec §6 Secrets, §12).
+{% for s in mta_maps.signing %}
+{{ s.selector }}._domainkey.{{ s.domain }} {{ s.domain }}:{{ s.selector }}:{{ opendkim_key_dir }}/{{ s.domain }}/{{ s.selector }}.private
+{% endfor %}

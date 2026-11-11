@@ -1,0 +1,10 @@
+- name: Reload postfix
+  ansible.builtin.systemd:
+    name: postfix
+    state: reloaded
+
+- name: Restart ship-postfix-log
+  ansible.builtin.systemd:
+    name: ship-postfix-log
+    state: restarted
+    daemon_reload: true

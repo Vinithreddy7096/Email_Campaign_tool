@@ -1,0 +1,25 @@
+{% extends "console/base.html" %}
+{% block title %}{% if campaign %}Edit {{ campaign.name }}{% else %}New campaign{% endif %}{% endblock %}
+
+{% block content %}
+<div class="phead">
+  <div>
+    <p class="crumb"><a href="{% url 'console:campaigns' %}">Campaigns</a> / {% if campaign %}<a href="{% url 'console:campaign' campaign.pk %}">{{ campaign.name }}</a> / Edit{% else %}New{% endif %}</p>
+    <h1>{% if campaign %}Edit draft{% else %}New campaign{% endif %}</h1>
+    <p class="sub">Choose who it comes from, what it says and who gets it. Saving never sends; preflight and approval come next.</p>
+  </div>
+</div>
+<div class="grid split">
+  <div class="panel">
+    <header><h2>Setup</h2></header>
+    <form method="post" class="body">{% csrf_token %}
+      {% include "console/_form_fields.html" %}
+      <div class="actions"><button class="btn primary" type="submit">{% if campaign %}Save draft{% else %}Create draft{% endif %}</button><a class="btn" href="{% if campaign %}{% url 'console:campaign' campaign.pk %}{% else %}{% url 'console:campaigns' %}{% endif %}">Cancel</a></div>
+    </form>
+  </div>
+  <div class="stack">
+    <div class="note">The sender's domain must be verified, and the template's category must match the purpose — a transactional template has no unsubscribe link and can never go out as marketing.</div>
+    <div class="note">The audience is a contact list, optionally narrowed by one of its segments. Consent and suppression are checked on whoever the segment selects.</div>
+  </div>
+</div>
+{% endblock %}

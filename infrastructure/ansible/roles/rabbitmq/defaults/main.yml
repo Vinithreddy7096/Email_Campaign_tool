@@ -1,0 +1,10 @@
+# RabbitMQ: the Celery broker. The app's RABBITMQ_URL becomes
+# amqp://<user>:<password>@<host>:5672/<vhost>
+rabbitmq_listen: "{{ ansible_default_ipv4.address | default('0.0.0.0') }}"
+rabbitmq_port: 5672
+rabbitmq_vhost: /
+rabbitmq_user: mailer
+rabbitmq_password: "{{ vault_rabbitmq_password }}"
+# Publishers block above this share of RAM (the RabbitMQResourceAlarm alert).
+rabbitmq_memory_high_watermark: 0.6
+rabbitmq_disk_free_limit: 2GB

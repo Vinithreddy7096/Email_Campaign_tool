@@ -1,0 +1,54 @@
+# {{ ansible_managed | default("Rendered from mta/postfix/master.cf.j2 — do not edit on the host") }}
+#
+# service type  private unpriv  chroot  wakeup  maxproc command + args
+# ==========================================================================
+smtp      inet  n       -       y       -       -       smtpd
+pickup    unix  n       -       y       60      1       pickup
+cleanup   unix  n       -       y       -       0       cleanup
+qmgr      unix  n       -       n       300     1       qmgr
+tlsmgr    unix  -       -       y       1000?   1       tlsmgr
+rewrite   unix  -       -       y       -       -       trivial-rewrite
+bounce    unix  -       -       y       -       0       bounce
+defer     unix  -       -       y       -       0       bounce
+trace     unix  -       -       y       -       0       bounce
+verify    unix  -       -       y       -       1       verify
+flush     unix  n       -       y       1000?   0       flush
+proxymap  unix  -       -       n       -       -       proxymap
+proxywrite unix -       -       n       -       1       proxymap
+smtp      unix  -       -       y       -       -       smtp
+relay     unix  -       -       y       -       -       smtp
+        -o syslog_name=postfix/$service_name
+showq     unix  n       -       y       -       -       showq
+error     unix  -       -       y       -       -       error
+retry     unix  -       -       y       -       -       error
+discard   unix  -       -       y       -       -       discard
+local     unix  -       n       n       -       -       local
+virtual   unix  -       n       n       -       -       virtual
+lmtp      unix  -       -       y       -       -       lmtp
+anvil     unix  -       -       y       -       1       anvil
+scache    unix  -       -       y       -       1       scache
+postlog   unix-dgram n  -       n       -       1       postlogd
+
+# ─── One transport per stream (§10.1, §10.3) ─────────────────────────────
+# Each binds its pool's IP and uses a HELO name matching that IP's PTR, and
+# logs as postfix-<stream>/smtp so the two streams are told apart.
+{% for stream in postfix_streams %}
+{{ stream.name }} unix  -       -       y       -       -       smtp
+        -o syslog_name=postfix-{{ stream.name }}
+{% if stream.bind_address | default("") %}
+        -o smtp_bind_address={{ stream.bind_address }}
+{% endif %}
+{% if stream.bind_address6 | default("") %}
+        -o smtp_bind_address6={{ stream.bind_address6 }}
+{% endif %}
+        -o smtp_helo_name={{ stream.helo_name | default(postfix_hostname) }}
+{% endfor %}
+
+# ─── Bounce / FBL intake (§10.8.1) ───────────────────────────────────────
+# O = X-Original-To, D = Delivered-To, R = Return-Path: the app finds the VERP
+# address there. forward-bounce exits 75 (EX_TEMPFAIL) if the app cannot take
+# the message, so Postfix keeps it and retries — nothing is lost.
+# pipe(8) runs with exactly this uid:gid (no supplementary groups), so the
+# group is the one that may read the intake secret.
+bounces   unix  -       n       n       -       {{ postfix_bounce_pipe_maxproc }}       pipe
+        flags=ODRq user={{ forwarder_user }}:mtaintake argv=/usr/local/bin/forward-bounce

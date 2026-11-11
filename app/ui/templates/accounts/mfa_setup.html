@@ -1,0 +1,17 @@
+{% extends "console/public.html" %}
+{% block title %}Set up two-factor authentication · Email Platform{% endblock %}
+
+{% block card %}
+  <span class="from">Email Platform · operations console</span>
+  <h1>Set up two-factor authentication</h1>
+  <p>{% if required %}Your role requires a second factor before you can continue. {% endif %}Add this key to an authenticator app (1Password, Google Authenticator, Aegis…), then enter the 6-digit code it shows.</p>
+  <code class="key" data-mfa-secret>{{ secret_display }}</code>
+  <details><summary>Setup link for apps that accept one</summary><p>{{ otpauth_uri }}</p></details>
+  {% if error %}<div class="note bad" role="alert">{{ error }}</div>{% endif %}
+  <form method="post" class="stack" style="gap:12px">{% csrf_token %}
+    <input type="hidden" name="next" value="{{ next }}">
+    <label class="field" for="code"><span>6-digit code</span>
+      <input id="code" name="code" class="codeinput" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" required autofocus></label>
+    <button class="btn primary" type="submit">Turn on two-factor authentication</button>
+  </form>
+{% endblock %}

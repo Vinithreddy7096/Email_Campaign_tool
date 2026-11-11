@@ -16,8 +16,11 @@ messages/day.
 
 ## Current state
 
-**Repository foundation only.** No message can be sent, because nothing that
-sends messages has been built yet. What exists:
+**The application is built; it has not yet sent real mail.** Every stage from
+contact import to bounce handling exists and is tested, but only against the
+local MailHog sink and recorded samples. A first production send is blocked by
+decisions and infrastructure, not application code — see
+[What is not done](#what-is-not-done). What exists:
 
 | Area | State |
 | --- | --- |
@@ -36,7 +39,7 @@ sends messages has been built yet. What exists:
 | Campaigns (BUILD §10.6) — model, preflight, approval snapshot, schedule/pause/cancel, API | ✅ `app/campaigns/`, `/api/v1/campaigns…`; admin review page with real-recipient samples. Dispatch (SCHEDULED → SENDING) arrives with the delivery pipeline |
 | Delivery pipeline (BUILD §10.7) — expand, render, policy at handoff, MIME, SMTP submission, retries, review queue | ✅ `workers/services/delivery.py` + Celery tasks on the expand/render/deliver queues; every job's history append-only |
 | Unsubscribe (BUILD §10.8.4) — signed link, confirm page, RFC 8058 one-click | ✅ `/u/<token>`; built early because rendering needs a working `unsubscribe_url` |
-| Operations console — Today, campaigns, templates, approvals, contacts, domains, delivery, suppression, controls, audit | ✅ `app/console/`, design from `docs/design/console-mockup.html`. Pages whose backend is not built (bounce/complaint ingest, contact import, rate limits) say so instead of showing numbers |
+| Operations console — Today, campaigns, templates, approvals, contacts (CSV import, segments), domains, delivery, suppression, controls, audit | ✅ `app/console/`, design from `docs/design/console-mockup.html`. Adding sending domains, single contacts, lists, users, roles and API tokens is done in the Django admin |
 | Event pipeline (BUILD §10.8) — Postfix log, DSN/ARF mail, signed provider webhook → delivery events, suppression, per-campaign stats | ✅ `workers/services/events.py`; `manage.py ingest_postfix_log` / `ingest_mail`; `POST /api/v1/events/provider` |
 | Transactional API (BUILD §10.6.6) — one message per request, idempotent, through the same policy and delivery pipeline | ✅ `POST /api/v1/messages`, `GET /api/v1/messages/{id}`; `workers/services/transactional.py` |
 | Rate limits + warm-up (BUILD §10.9 checks 6–7) — the mechanism; **no numbers are built in** (Q-POL-1) | ✅ `workers/services/ratelimit.py`; configured on the console's Controls page |
@@ -45,11 +48,33 @@ sends messages has been built yet. What exists:
 | Monitoring: `/metrics`, alert rules (+ unit tests), Alertmanager, Grafana dashboard | ✅ `app/common/metrics.py`, `monitoring/`; runbooks in `docs/runbooks.md` |
 | Backups: nightly dump to S3/MinIO + weekly automated restore test | ✅ `scripts/backup/pgbackup.py`, `deploy/backup/` |
 | CI: tests, image smoke test, MTA, monitoring, backup, Ansible | ✅ `.github/workflows/ci.yml` — deployment steps in `docs/DEPLOYMENT.md` |
-| MTA / Postfix / OpenDKIM (§10) | ❌ not started |
-| Everything else | ❌ not started |
+| Data hosts: Postgres (pgBackRest), Redis, RabbitMQ | ✅ Ansible roles + `playbooks/data.yml` |
 
-See [docs/OPEN_QUESTIONS.md](docs/OPEN_QUESTIONS.md) — in particular **Q-BUILD-1**,
-the missing §17 phase plan.
+### What is not done
+
+Blocking a first real send (details in [docs/OPEN_QUESTIONS.md](docs/OPEN_QUESTIONS.md)):
+
+| Item | State |
+| --- | --- |
+| Hosting provider and IPs (Q-HOST-1) | ❌ undecided — `infrastructure/terraform/` is placeholders, Ansible inventories hold example addresses |
+| Sending, bounce and Message-ID domains (Q-DNS-1) | ❌ not supplied |
+| Rate-limit and warm-up numbers (Q-POL-1) | ❌ mechanism built, no numbers. Do not start production traffic without them |
+| Secret management, DKIM key custody and rotation (Q-SEC-1, Q-MTA-1) | ❌ undecided; rotation is manual |
+| Legal sign-off: retention, consent age, transactional exceptions (Q-LEGAL-1) | ❌ open; no retention or purge job exists |
+| End-to-end run against a live Postfix, load test at 100k/day | ❌ `tests/e2e/` is empty |
+
+Not built:
+
+- Ansible roles `app`, `worker`, `monitoring` (empty folders).
+- Open and click tracking (`DEFAULT_TRACKING_DOMAIN` is read but unused).
+- Soft-bounce auto-suppression (Q-EVT-1) and automatic pause on complaint or
+  bounce spikes (Q-EVT-2) — both alert/count only, by decision.
+- Adapters for real provider webhooks; the endpoint accepts this project's own payload format.
+- An API for contacts, consent capture or templates, and a public signup form —
+  consent arrives by CSV import or the admin.
+- Password reset and MFA recovery codes (recovery goes through an admin).
+- The core data model is still **provisional** (Q-DATA-1): the source
+  specification and `BUILD.md` before §10.5 are not in this repository.
 
 ## Safety posture
 

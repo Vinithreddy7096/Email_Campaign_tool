@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from django.contrib import admin
-from django.db.models import QuerySet
 from typing import Any
 
+from django.contrib import admin
+from django.db.models import QuerySet
 from django.http import HttpRequest
 
 from common.admin import NoDeleteAdmin, ViewOnlyAdmin

@@ -98,8 +98,9 @@ def compute_audience(campaign: Campaign) -> Audience:
 
     Raises ValidationError if the segment's rules are invalid."""
     members = Contact.objects.live().filter(memberships__contact_list=campaign.audience_list)
-    if campaign.audience_segment_id is not None:
-        members = members.filter(segments.to_q(campaign.audience_segment.definition))
+    segment = campaign.audience_segment
+    if segment is not None:
+        members = members.filter(segments.to_q(segment.definition))
     rows = list(members.order_by("id").values_list("id", "email", "email_hash"))
     audience = Audience(total=len(rows))
     pairs = [(h, (email or "").rpartition("@")[2]) for _, email, h in rows]

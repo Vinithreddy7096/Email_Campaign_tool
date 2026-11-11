@@ -33,11 +33,10 @@ def as_role(sql, params=None):
     try:
         with transaction.atomic(), connection.cursor() as cur:
             cur.execute(f"SET LOCAL ROLE {ROLE}")
-            try:
-                cur.execute(sql, params)
-                return cur.fetchall() if cur.description else "ok"
-            finally:
-                cur.execute("RESET ROLE")
+            cur.execute(sql, params)
+            result = cur.fetchall() if cur.description else "ok"
+            cur.execute("RESET ROLE")
+            return result
     except DatabaseError as exc:
         return str(exc).splitlines()[0]
 

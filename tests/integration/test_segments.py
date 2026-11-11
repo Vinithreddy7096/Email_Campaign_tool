@@ -96,7 +96,9 @@ def test_rules_select_the_right_members(lst, people, definition, expected):
 def test_a_segment_never_reaches_beyond_its_list(lst, people):
     other = ContactList.objects.create(name="Other", stream=Stream.MARKETING)
     member(other, "outsider@gmail.com")
-    assert "outsider" not in selected(lst, {"field": "email_domain", "op": "eq", "value": "gmail.com"})
+    assert "outsider" not in selected(
+        lst, {"field": "email_domain", "op": "eq", "value": "gmail.com"}
+    )
 
 
 def test_list_and_time_conditions(lst, people):
@@ -111,7 +113,9 @@ def test_list_and_time_conditions(lst, people):
     assert selected(lst, {"field": "created_at", "op": "before", "value": cutoff}) == ["ada"]
     ConsentRecord.objects.create(contact=people["dee"], stream=Stream.MARKETING,
                                  action="GRANTED", method="WEB_FORM", occurred_at=old)  # fmt: skip
-    assert selected(lst, {"field": "consent_granted_at", "op": "before", "value": cutoff}) == ["dee"]
+    assert selected(lst, {"field": "consent_granted_at", "op": "before", "value": cutoff}) == [
+        "dee"
+    ]
 
 
 @pytest.mark.parametrize(("definition", "message"), [
@@ -157,7 +161,9 @@ def test_create_and_edit_are_permission_checked_validated_and_audited(person, ls
     with pytest.raises(ValidationError):  # name is unique per list
         contact_services.create_segment(manager, contact_list=lst, name="Gmail", definition={})
     contact_services.update_segment(manager, seg, definition={})
-    actions = list(AuditEvent.objects.filter(target_id=str(seg.pk)).values_list("action", flat=True))
+    actions = list(
+        AuditEvent.objects.filter(target_id=str(seg.pk)).values_list("action", flat=True)
+    )
     assert sorted(actions) == ["segment.create", "segment.edit"]
 
 
@@ -233,7 +239,11 @@ def test_segment_narrows_the_audience_and_is_frozen_in_the_snapshot(campaign_wor
     # Editing the segment later does not change what was approved.
     contact_services.update_segment(w["admin"], w["segment"], definition={})
     snapshot.refresh_from_db()
-    assert snapshot.segment_definition == {"field": "email_domain", "op": "eq", "value": "gmail.com"}
+    assert snapshot.segment_definition == {
+        "field": "email_domain",
+        "op": "eq",
+        "value": "gmail.com",
+    }
 
 
 def test_segment_does_not_bypass_consent_or_suppression(campaign_world, lst, people):

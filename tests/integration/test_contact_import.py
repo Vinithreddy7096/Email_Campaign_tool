@@ -258,7 +258,8 @@ def test_resume_requeues_lost_and_stuck_imports_only(manager, newsletter, no_bro
                             content=b"email\na@example.com\n", consent_source="F",
                             attestation_text="Y")  # fmt: skip
         ContactImport.objects.filter(pk=imp.pk).update(
-            status=status, updated_at=timezone.now() - timedelta(minutes=age_minutes))
+            status=status, updated_at=timezone.now() - timedelta(minutes=age_minutes)
+        )
         return str(imp.pk)
 
     lost = make("PENDING", 5)
@@ -284,7 +285,9 @@ def test_console_upload_flow(manager, newsletter, login_verified, no_broker):
             "file": SimpleUploadedFile("p.csv", b"email\nweb@example.com\n", "text/csv")}  # fmt: skip
     response = client.post(reverse("console:contact_import_new"), data)
     imp = ContactImport.objects.get()
-    assert response.status_code == 302 and response.url == reverse("console:contact_import", args=[imp.pk])
+    assert response.status_code == 302 and response.url == reverse(
+        "console:contact_import", args=[imp.pk]
+    )
     page = client.get(response.url).content.decode()
     assert "refreshes by itself" in page and "location.reload" in page
     imports.process(imp.pk)

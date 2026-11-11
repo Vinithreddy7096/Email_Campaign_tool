@@ -4,6 +4,7 @@ every number here is a test value; none are built in (Q-POL-1)."""
 from datetime import datetime, time, timedelta
 
 import pytest
+from django.core.cache import caches
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.urls import reverse
@@ -146,7 +147,10 @@ def test_cache_failure_with_limits_configured_holds(w, monkeypatch):
     def broken(*a, **k):
         raise ConnectionError("redis down")
 
-    monkeypatch.setattr(ratelimit.cache, "incr", broken)
+    # Patch the backend class, not the `cache` proxy: the proxy forwards setattr to
+    # whichever backend instance is current, and that instance is replaced when the
+    # CACHES override is undone, so monkeypatch's own undo would hit a different object.
+    monkeypatch.setattr(type(caches["default"]), "incr", broken)
     jobs = hand_off(expand_and_render(w))
     assert [j.state for j in jobs] == [State.RENDERED] * 3
     assert last_reasons(jobs[0])[0]["code"] == "POLICY_ERROR"
@@ -156,7 +160,10 @@ def test_cache_failure_without_limits_does_not_block(w, monkeypatch):
     def broken(*a, **k):
         raise ConnectionError("redis down")
 
-    monkeypatch.setattr(ratelimit.cache, "incr", broken)
+    # Patch the backend class, not the `cache` proxy: the proxy forwards setattr to
+    # whichever backend instance is current, and that instance is replaced when the
+    # CACHES override is undone, so monkeypatch's own undo would hit a different object.
+    monkeypatch.setattr(type(caches["default"]), "incr", broken)
     assert [j.state for j in hand_off(expand_and_render(w))] == [State.ACCEPTED] * 3
 
 

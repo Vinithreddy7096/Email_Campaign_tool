@@ -10,7 +10,7 @@ sign-off) are listed in `docs/OPEN_QUESTIONS.md`; this document assumes them.
 |---|---|---|
 | App node(s) | nginx → gunicorn web, Celery workers, beat (one node only) | `Dockerfile` target `production`, `deploy/docker-compose.prod.yml`, `deploy/nginx.conf` |
 | MTA host(s) | Postfix, OpenDKIM, `forward-bounce`, `ship-postfix-log` — **not** containerised (spec §13) | `mta/` templates via `infrastructure/ansible/playbooks/mta.yml` |
-| Data | Postgres 16, RabbitMQ, Redis | your provider or Ansible roles (not built yet) |
+| Data | Postgres 16, RabbitMQ, Redis | your provider, or `infrastructure/ansible/playbooks/data.yml` |
 | Monitoring | Prometheus, Alertmanager, Grafana, exporters | `monitoring/` |
 | Backups | nightly dump + weekly restore test, on one app node | `deploy/backup/` |
 

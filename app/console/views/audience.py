@@ -46,7 +46,9 @@ def contacts(request: HttpRequest) -> HttpResponse:
         "lists": len(lists),
     }
     segments = []
-    for seg in Segment.objects.select_related("contact_list").order_by("contact_list__name", "name"):
+    for seg in Segment.objects.select_related("contact_list").order_by(
+        "contact_list__name", "name"
+    ):
         try:
             count: int | None = seg.members().count()
         except ValidationError:
